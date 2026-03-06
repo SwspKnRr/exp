@@ -167,7 +167,34 @@ def download_vix_data(
         ignore_tz=True
     )
     
-    vix_series = vix['Adj Close']
+    # Extract close prices flexibly
+    if isinstance(vix, pd.DataFrame):
+        # Try different column names
+        if 'Adj Close' in vix.columns:
+            vix_series = vix['Adj Close']
+        elif 'Close' in vix.columns:
+            vix_series = vix['Close']
+        elif isinstance(vix.columns, pd.MultiIndex):
+            # Handle MultiIndex columns
+            try:
+                vix_series = vix.xs('Adj Close', level=1, axis=1).iloc[:, 0]
+            except (KeyError, IndexError):
+                try:
+                    vix_series = vix.xs('Close', level=1, axis=1).iloc[:, 0]
+                except (KeyError, IndexError):
+                    # Fallback to first column
+                    vix_series = vix.iloc[:, 0]
+        else:
+            # Not MultiIndex, use first column
+            vix_series = vix.iloc[:, 0]
+    else:
+        # Single series returned
+        vix_series = vix
+    
+    # Ensure it's a Series
+    if isinstance(vix_series, pd.DataFrame):
+        vix_series = vix_series.iloc[:, 0]
+    
     vix_series.name = 'VIX'
     
     print(f"VIX data shape: {vix_series.shape}")
