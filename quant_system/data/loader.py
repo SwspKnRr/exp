@@ -60,11 +60,21 @@ def download_price_data(
         )
     except Exception as e:
         print(f"⚠️  Error downloading data: {e}")
+        import traceback
+        traceback.print_exc()
         return pd.DataFrame()
     
     # Check if data is empty
-    if data is None or len(data) == 0:
-        print("⚠️  No data returned from yfinance")
+    if data is None:
+        print("⚠️  yfinance returned None")
+        return pd.DataFrame()
+    
+    if isinstance(data, pd.DataFrame) and data.empty:
+        print("⚠️  yfinance returned empty DataFrame")
+        return pd.DataFrame()
+    
+    if isinstance(data, pd.Series) and len(data) == 0:
+        print("⚠️  yfinance returned empty Series")
         return pd.DataFrame()
     
     print(f"Raw data type: {type(data)}, shape: {data.shape if hasattr(data, 'shape') else 'N/A'}")
@@ -150,8 +160,27 @@ def download_price_data(
     
     # Remove rows with NaN values
     print(f"Rows before dropna: {len(prices)}")
-    prices = prices.dropna()
+    initial_rows = len(prices)
+    
+    # Drop rows where ALL values are NaN (not just any NaN)
+    prices_dropped = prices.dropna(how='any')  # Strict: remove any row with NaN
+    
+    # If we lose too much data, try a looser approach
+    if len(prices_dropped) < len(prices) * 0.5:
+        print(f"⚠️  Strict dropna removed {len(prices) - len(prices_dropped)} rows")
+        print(f"    Using looser approach...")
+        prices = prices.dropna(thresh=len(prices.columns) * 0.8)  # Keep if 80%+ columns have data
+    else:
+        prices = prices_dropped
+    
     print(f"Rows after dropna: {len(prices)}")
+    
+    if initial_rows > 0 and len(prices) == 0:
+        print(f"⚠️  CRITICAL: All {initial_rows} rows were removed by dropna!")
+        print(f"    This usually means all data has NaN values")
+        print(f"    Sample data:")
+        sample = prices_dropped.head()
+        print(sample)
     
     if len(prices) > 0:
         print(f"\n✓ Downloaded data shape: {prices.shape}")

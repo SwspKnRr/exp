@@ -81,24 +81,59 @@ def download_and_prepare_data(start_date='2010-01-01', end_date=None):
     prices = download_price_data(ALL_TICKERS, start_date=start_date, end_date=end_date)
     progress_bar.progress(20)
     
+    # Check if price data is valid
+    if prices is None or prices.empty:
+        status_container.error("❌ Failed to download price data")
+        st.error("Could not retrieve price data from Yahoo Finance")
+        st.info("Possible reasons:")
+        st.write("1. Network connectivity issue")
+        st.write("2. Yahoo Finance API temporary unavailable")
+        st.write("3. Data not available for selected date range")
+        st.write("\nPlease try again or check your internet connection.")
+        return None, None, None, None, None
+    
+    st.write(f"✓ Loaded price data: {prices.shape[0]} dates × {prices.shape[1]} tickers")
+    
     # Download VIX
     status_container.info("📥 Downloading VIX data...")
-    vix = download_vix_data(start_date=start_date, end_date=end_date)
+    try:
+        vix = download_vix_data(start_date=start_date, end_date=end_date)
+        if vix is None or len(vix) == 0:
+            st.warning("⚠️  VIX data unavailable, continuing without it")
+            vix = pd.Series(dtype=float)
+    except Exception as e:
+        st.warning(f"⚠️  Could not download VIX: {e}")
+        vix = pd.Series(dtype=float)
     progress_bar.progress(40)
     
     # Create momentum features
     status_container.info("⚙️  Creating momentum features...")
-    momentum_features = create_momentum_features(prices)
+    try:
+        momentum_features = create_momentum_features(prices)
+        st.write(f"✓ Created {len(momentum_features.columns)} momentum features")
+    except Exception as e:
+        st.error(f"❌ Error creating momentum features: {e}")
+        return None, None, None, None, None
     progress_bar.progress(60)
     
     # Create volatility features
     status_container.info("⚙️  Creating volatility features...")
-    volatility_features = create_volatility_features(prices)
+    try:
+        volatility_features = create_volatility_features(prices)
+        st.write(f"✓ Created {len(volatility_features.columns)} volatility features")
+    except Exception as e:
+        st.error(f"❌ Error creating volatility features: {e}")
+        return None, None, None, None, None
     progress_bar.progress(80)
     
     # Create macro features
     status_container.info("⚙️  Creating macro features...")
-    macro_features = create_macro_features(prices, vix)
+    try:
+        macro_features = create_macro_features(prices, vix)
+        st.write(f"✓ Created {len(macro_features.columns)} macro features")
+    except Exception as e:
+        st.error(f"❌ Error creating macro features: {e}")
+        return None, None, None, None, None
     progress_bar.progress(100)
     
     status_container.success("✓ Data preparation complete!")
@@ -1445,11 +1480,22 @@ def main():
             # Step 1: Download and prepare data
             st.header("1️⃣ Data Download & Feature Engineering")
             with st.spinner("Preparing data..."):
-                prices, vix, momentum_features, volatility_features, macro_features = \
-                    download_and_prepare_data(
-                        start_date=data_start.strftime('%Y-%m-%d'),
-                        end_date=data_end.strftime('%Y-%m-%d')
-                    )
+                result = download_and_prepare_data(
+                    start_date=data_start.strftime('%Y-%m-%d'),
+                    end_date=data_end.strftime('%Y-%m-%d')
+                )
+                
+                # Check if result is None (error occurred)
+                if result[0] is None:
+                    st.error("❌ Failed to prepare data. Cannot continue with pipeline.")
+                    return
+                
+                prices, vix, momentum_features, volatility_features, macro_features = result
+            
+            # Verify all data is valid
+            if prices is None or len(prices) == 0:
+                st.error("❌ Price data is empty")
+                return
             
             st.write(f"✓ Downloaded **{len(prices)}** trading days")
             st.write(f"✓ Downloaded **{len(prices.columns)}** tickers")
