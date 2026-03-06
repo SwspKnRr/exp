@@ -1171,30 +1171,40 @@ def show_day_trading_analysis():
         
         # Use longer lookback period to ensure we get data
         start_date = (pd.Timestamp.today() - pd.Timedelta(days=max(lookback_days, 90))).strftime('%Y-%m-%d')
-        st.write(f"📅 기간: {start_date} ~ 오늘 | 티커: {selected_ticker}")
+        st.write(f"📅 기간: {start_date} ~ 오늘")
         
         prices = download_price_data([selected_ticker], start_date=start_date)
         
+        # Debug info
+        st.info("**다운로드 상태:**")
+        if prices is not None and not prices.empty:
+            st.write(f"✓ 데이터 형태: {prices.shape[0]} 행 × {prices.shape[1]} 컬럼")
+            st.write(f"✓ 컬럼명: {list(prices.columns)}")
+            st.write(f"✓ 기간: {prices.index[0].date()} ~ {prices.index[-1].date()}")
+        else:
+            st.write(f"✗ 데이터 로드 실패")
+        
         if prices is None:
             st.error(f"❌ 데이터 다운로드 실패: {selected_ticker}")
-            st.info("다음을 확인하세요:")
-            st.write("1. 티커 기호가 정확한지 확인")
-            st.write("2. 인터넷 연결 확인")
-            st.write("3. 다시 시도해보세요")
+            st.warning("**해결책:**")
+            st.write("1. 올바른 티커 확인 (예: SPY, AAPL, BTC-USD)")
+            st.write("2. 인터넷 연결 확인")  
+            st.write("3. 기간 연장 (90일 이상)")
             return
         
         if prices.empty:
-            st.error(f"❌ 사용 가능한 데이터 없음: {selected_ticker}")
-            st.info("가능한 이유:")
-            st.write("- 잘못된 티커 기호")
-            st.write("- 해당 기간에 거래 데이터 없음")
-            st.write("- Yahoo Finance 일시 중단")
+            st.error(f"❌ 수신한 데이터가 비어있음: {selected_ticker}")
+            st.warning("**해결책:**")
+            st.write("1. 티커 기호 정확성 확인")
+            st.write("2. 다른 기간으로 시도 (예: 1년)")
+            st.write("3. 다른 티커로 테스트 (예: SPY, GLD)")
             return
         
-        if len(prices) < 30:
-            st.warning(f"⚠️  데이터 포인트 부족: {len(prices)}개 (권장: 30개)")
-            if len(prices) < 20:
-                st.error("❌ 기술 분석에 필요한 최소 데이터 부족 (20개)")
+        if len(prices) < 20:
+            st.warning(f"⚠️  데이터 부족: {len(prices)}개 (권장: 30개)")
+            st.info(f"기간: {prices.index[0].date()} ~ {prices.index[-1].date()}")
+            if len(prices) < 10:
+                st.error("❌ 최소한 10개 이상의 데이터 필요")
                 return
         
         # Get the price series
@@ -1202,28 +1212,48 @@ def show_day_trading_analysis():
             if selected_ticker in prices.columns:
                 price_series = prices[selected_ticker]
             elif len(prices.columns) > 0:
-                price_series = prices.iloc[:, 0]
-                st.info(f"📍 사용 컬럼: {prices.columns[0]}")
+                # Use first column
+                col_name = prices.columns[0]
+                price_series = prices[col_name]
+                st.info(f"📍 '{selected_ticker}' 대신 '{col_name}' 사용")
             else:
-                st.error(f"❌ 가격 데이터 없음: {selected_ticker}")
+                st.error(f"❌ DataFrame에 컬럼 없음")
                 return
         else:
             price_series = prices
         
         # Verify price series
         if price_series is None or len(price_series) == 0:
-            st.error(f"❌ 가격 시리즈 비어있음: {selected_ticker}")
+            st.error(f"❌ 가격 데이터 비어있음")
             return
         
-        st.success(f"✓ 데이터 로드 완료: {len(price_series)}개 거래일")
-        st.write(f"📅 기간: {price_series.index[0].date()} ~ {price_series.index[-1].date()}")
+        # Check for all NaN
+        if price_series.isna().all():
+            st.error(f"❌ 모든 가격이 NaN입니다")
+            return
+        
+        # Remove NaN for analysis
+        price_series_clean = price_series.dropna()
+        
+        if len(price_series_clean) == 0:
+            st.error(f"❌ NaN 제거 후 데이터 없음")
+            return
+        
+        st.success(f"✓ 데이터 로드 완료!")
+        st.write(f"📊 유효 데이터: {len(price_series_clean)}개")
+        st.write(f"📅 기간: {price_series_clean.index[0].date()} ~ {price_series_clean.index[-1].date()}")
+        st.write(f"💰 범위: ${price_series_clean.min():.2f} ~ ${price_series_clean.max():.2f}")
         
         st.divider()
         
         # Check if we have enough data for indicators
-        if len(price_series) < 26:
+        if len(price_series_clean) < 26:
             st.error("❌ 지표 계산 불가 (최소 26개 필요)")
+            st.write(f"현재: {len(price_series_clean)}개")
             return
+        
+        # Use clean series for analysis
+        price_series = price_series_clean
         
         # Initialize day trading strategy
         dt_strategy = DayTradingSignals()
@@ -1237,7 +1267,7 @@ def show_day_trading_analysis():
         signals_dict = dt_strategy.generate_signals(pd.DataFrame({selected_ticker: price_series}))
         
         if not signals_dict or selected_ticker not in signals_dict:
-            st.error(f"❌ 신호 생성 실패: {selected_ticker}")
+            st.error(f"❌ 신호 생성 실패")
             return
         
         indicators = signals_dict[selected_ticker]
