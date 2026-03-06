@@ -1387,14 +1387,157 @@ def show_day_trading_analysis():
             st.plotly_chart(fig, use_container_width=True)
         
         with tab4:
-            # Signal history (last 20 days)
-            recent_signals = indicators[['signal', 'rsi', 'macd', 'histogram']].tail(20).copy()
+            # Signal history and reliability metrics
+            st.subheader("📊 신호 이력 & 신뢰성")
             
-            signal_display = recent_signals.copy()
-            signal_display.columns = ['신호', 'RSI', 'MACD', '히스토그램']
-            signal_display['신호'] = signal_display['신호'].apply(lambda x: '🟢 매수' if x == 1 else '🔴 매도' if x == -1 else '⚪ 관망')
+            # Get signal history
+            signal_history = dt_strategy.get_signal_history(
+                pd.DataFrame({selected_ticker: price_series}),
+                selected_ticker,
+                lookback_days=min(100, len(price_series))
+            )
             
-            st.dataframe(signal_display, use_container_width=True)
+            # Display signal history
+            st.markdown("**최근 신호 이력 (최근 20개)**")
+            
+            if len(signal_history) > 0:
+                display_history = signal_history[['날짜', '가격', '신호_이름', 'RSI', '강도']].tail(20).copy()
+                display_history['날짜'] = display_history['날짜'].dt.strftime('%Y-%m-%d')
+                display_history['가격'] = display_history['가격'].apply(lambda x: f"${x:.2f}")
+                
+                st.dataframe(display_history, use_container_width=True, hide_index=True)
+            
+            st.divider()
+            
+            # Calculate and display reliability metrics
+            st.markdown("**신뢰성 지표**")
+            
+            metrics = dt_strategy.calculate_backtest_metrics(pd.DataFrame({selected_ticker: price_series}))
+            
+            if selected_ticker in metrics:
+                metric_data = metrics[selected_ticker]
+                
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric(
+                        "총 매수 신호",
+                        f"{metric_data['total_buy_signals']}개",
+                        help="지난 기간 동안 발생한 매수 신호 수"
+                    )
+                
+                with col2:
+                    st.metric(
+                        "총 매도 신호",
+                        f"{metric_data['total_sell_signals']}개",
+                        help="지난 기간 동안 발생한 매도 신호 수"
+                    )
+                
+                with col3:
+                    win_rate = metric_data['win_rate']
+                    color_delta = f"+{win_rate:.1f}%" if win_rate > 50 else f"{win_rate:.1f}%"
+                    st.metric(
+                        "승률",
+                        f"{win_rate:.1f}%",
+                        delta=color_delta,
+                        help="매수 후 5일 수익을 얻은 비율"
+                    )
+                
+                with col4:
+                    avg_ret = metric_data['avg_return_pct']
+                    color_delta = f"+{avg_ret:.2f}%" if avg_ret > 0 else f"{avg_ret:.2f}%"
+                    st.metric(
+                        "평균 수익률",
+                        f"{avg_ret:.2f}%",
+                        delta=color_delta,
+                        help="매수 후 5일 평균 수익률"
+                    )
+                
+                st.divider()
+                
+                # Detailed reliability analysis
+                st.markdown("**신뢰성 분석**")
+                
+                if metric_data['total_buy_signals'] > 0:
+                    win_count = metric_data['win_count']
+                    loss_count = metric_data['loss_count']
+                    
+                    # Risk/Reward analysis
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.info(f"""
+                        **신호 분포:**
+                        - 수익 신호: {win_count}개 ({win_count/metric_data['total_buy_signals']*100:.1f}%)
+                        - 손실 신호: {loss_count}개 ({loss_count/metric_data['total_buy_signals']*100:.1f}%)
+                        - 총합: {metric_data['total_buy_signals']}개
+                        """)
+                    
+                    with col2:
+                        returns = metric_data['returns']
+                        if returns:
+                            max_ret = max(returns) * 100
+                            min_ret = min(returns) * 100
+                            st.info(f"""
+                            **수익률 범위:**
+                            - 최대 수익: +{max_ret:.2f}%
+                            - 최대 손실: {min_ret:.2f}%
+                            - 중위값: {np.median(returns)*100:.2f}%
+                            """)
+                else:
+                    st.warning("📊 신호가 충분하지 않아 신뢰성 지표를 계산할 수 없습니다.")
+            
+            st.divider()
+            
+            # Historical signal chart
+            st.markdown("**신호 발생 추이**")
+            
+            if len(signal_history) > 0:
+                # Create a chart showing signals over time
+                signal_chart_data = signal_history[['날짜', '가격', '신호']].copy()
+                signal_chart_data = signal_chart_data.set_index('날짜')
+                
+                fig = go.Figure()
+                
+                # Add price line
+                fig.add_trace(go.Scatter(
+                    x=signal_chart_data.index,
+                    y=signal_chart_data['가격'].values,
+                    mode='lines',
+                    name='가격',
+                    line=dict(color='black', width=2)
+                ))
+                
+                # Add buy signals (green dots)
+                buy_signals = signal_chart_data[signal_chart_data['신호'] == 1]
+                if len(buy_signals) > 0:
+                    fig.add_trace(go.Scatter(
+                        x=buy_signals.index,
+                        y=buy_signals['가격'].values,
+                        mode='markers',
+                        name='매수',
+                        marker=dict(color='green', size=10, symbol='triangle-up')
+                    ))
+                
+                # Add sell signals (red dots)
+                sell_signals = signal_chart_data[signal_chart_data['신호'] == -1]
+                if len(sell_signals) > 0:
+                    fig.add_trace(go.Scatter(
+                        x=sell_signals.index,
+                        y=sell_signals['가격'].values,
+                        mode='markers',
+                        name='매도',
+                        marker=dict(color='red', size=10, symbol='triangle-down')
+                    ))
+                
+                fig.update_layout(
+                    title=f"{selected_ticker} - 신호 이력 (과거 {len(signal_history)}일)",
+                    xaxis_title="날짜",
+                    yaxis_title="가격",
+                    height=400
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
         
         st.divider()
         

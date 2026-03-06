@@ -223,6 +223,150 @@ class DayTradingSignals:
         
         return signals
     
+    def calculate_backtest_metrics(self, prices: pd.DataFrame) -> Dict[str, Dict]:
+        """
+        Calculate reliability metrics based on historical signals and price movements.
+        
+        Parameters
+        ----------
+        prices : pd.DataFrame
+            Price data
+        
+        Returns
+        -------
+        Dict[str, Dict]
+            Metrics including win rate, avg returns, signal frequency
+        """
+        
+        signals_dict = self.generate_signals(prices)
+        metrics = {}
+        
+        for ticker, indicators in signals_dict.items():
+            price = indicators['price']
+            signal = indicators['signal']
+            
+            # Get signal points (buy=1, sell=-1)
+            buy_signals = signal == 1
+            sell_signals = signal == -1
+            
+            buy_dates = signal[buy_signals].index.tolist()
+            sell_dates = signal[sell_signals].index.tolist()
+            
+            # Calculate returns from buy signals
+            returns = []
+            win_count = 0
+            loss_count = 0
+            
+            for buy_date in buy_dates:
+                buy_price = price.loc[buy_date]
+                
+                # Find next sell signal or use next prices
+                future_dates = price.index[price.index > buy_date]
+                if len(future_dates) == 0:
+                    continue
+                
+                # Calculate 5-day returns as benchmark
+                if len(future_dates) >= 5:
+                    sell_price = price.loc[future_dates[4]]
+                else:
+                    sell_price = price.iloc[-1]
+                
+                ret = (sell_price - buy_price) / buy_price
+                returns.append(ret)
+                
+                if ret > 0:
+                    win_count += 1
+                else:
+                    loss_count += 1
+            
+            total_signals = len(buy_signals[buy_signals])
+            win_rate = (win_count / (win_count + loss_count)) * 100 if (win_count + loss_count) > 0 else 0
+            avg_return = np.mean(returns) * 100 if returns else 0
+            
+            metrics[ticker] = {
+                'total_buy_signals': len(buy_dates),
+                'total_sell_signals': len(sell_dates),
+                'win_count': win_count,
+                'loss_count': loss_count,
+                'win_rate': win_rate,
+                'avg_return_pct': avg_return,
+                'returns': returns
+            }
+        
+        return metrics
+    
+    def get_signal_history(self, prices: pd.DataFrame, ticker: str, lookback_days: int = 100) -> pd.DataFrame:
+        """
+        Get historical buy/hold/sell signals.
+        
+        Parameters
+        ----------
+        prices : pd.DataFrame
+            Price data
+        ticker : str
+            Ticker symbol
+        lookback_days : int
+            How many recent days to include
+        
+        Returns
+        -------
+        pd.DataFrame
+            History with signals and prices
+        """
+        
+        signals_dict = self.generate_signals(prices)
+        
+        if ticker not in signals_dict:
+            return pd.DataFrame()
+        
+        indicators = signals_dict[ticker]
+        
+        # Get last N days
+        if len(indicators) > lookback_days:
+            indicators = indicators.tail(lookback_days)
+        
+        # Create result dataframe
+        result = pd.DataFrame({
+            '날짜': indicators.index,
+            '가격': indicators['price'].values,
+            '신호': indicators['signal'].values,
+            'RSI': indicators['rsi'].values.round(2),
+            'MACD': indicators['macd'].values.round(4),
+            'Signal': indicators['signal_line'].values.round(4)
+        })
+        
+        # Replace signal values with labels
+        result['신호_이름'] = result['신호'].map({
+            1: '🟢 매수',
+            -1: '🔴 매도',
+            0: '⚪ 관망'
+        })
+        
+        # Calculate signal strength
+        result['강도'] = result.apply(
+            lambda row: self._calculate_signal_strength_row(row['RSI'], row['MACD']),
+            axis=1
+        )
+        
+        return result.reset_index(drop=True)
+    
+    def _calculate_signal_strength_row(self, rsi: float, macd: float) -> str:
+        """Determine signal strength based on RSI and MACD."""
+        
+        if np.isnan(rsi) or np.isnan(macd):
+            return '약함'
+        
+        # Strong when RSI is extreme and MACD is large
+        rsi_extreme = np.abs(rsi - 50) > 20
+        macd_strong = np.abs(macd) > 0.1
+        
+        if rsi_extreme and macd_strong:
+            return '강함'
+        elif rsi_extreme or macd_strong:
+            return '보통'
+        else:
+            return '약함'
+    
     def get_signal_strength(self, prices: pd.DataFrame) -> pd.DataFrame:
         """
         Calculate signal strength (0-1) for each ticker.
