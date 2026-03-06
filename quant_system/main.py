@@ -1140,44 +1140,61 @@ def show_day_trading_analysis():
     
     # Sidebar configuration for day trading
     st.sidebar.subheader("🕐 Day Trading Settings")
-    col1, col2 = st.sidebar.columns(2)
+    
+    col1, col2 = st.sidebar.columns([2, 1])
     with col1:
-        selected_ticker = st.sidebar.selectbox(
-            "Select ETF",
-            options=['SPY', 'QQQ', 'IWM', 'GLD', 'TLT', 'XLK', 'XLF', 'XLE', 'XLV', 'XLY'],
-            index=0
-        )
+        selected_ticker = st.sidebar.text_input(
+            "Enter Ticker",
+            value="SPY",
+            placeholder="예: SPY, QQQ, GLD",
+            help="원하는 ETF 티커 기호를 입력하세요"
+        ).upper().strip()
+        
+        if not selected_ticker:
+            st.error("❌ 티커를 입력해주세요 (예: SPY, QQQ)")
+            return
+    
     with col2:
-        lookback_days = st.sidebar.slider("Lookback Period (days)", min_value=30, max_value=365, value=90)
+        lookback_days = st.sidebar.slider(
+            "기간 (일)",
+            min_value=30,
+            max_value=365,
+            value=90,
+            step=10
+        )
+    
+    st.info(f"📊 분석 대상: **{selected_ticker}**")
     
     try:
         # Download recent data
-        st.info("📥 Downloading recent price data...")
+        st.info("📥 데이터 다운로드 중...")
         
         # Use longer lookback period to ensure we get data
         start_date = (pd.Timestamp.today() - pd.Timedelta(days=max(lookback_days, 90))).strftime('%Y-%m-%d')
-        st.write(f"📊 Requesting data from {start_date} to today for {selected_ticker}...")
+        st.write(f"📅 기간: {start_date} ~ 오늘 | 티커: {selected_ticker}")
         
         prices = download_price_data([selected_ticker], start_date=start_date)
         
         if prices is None:
-            st.error(f"❌ download_price_data returned None for {selected_ticker}")
-            st.info("Try a different ticker or increase the lookback period.")
+            st.error(f"❌ 데이터 다운로드 실패: {selected_ticker}")
+            st.info("다음을 확인하세요:")
+            st.write("1. 티커 기호가 정확한지 확인")
+            st.write("2. 인터넷 연결 확인")
+            st.write("3. 다시 시도해보세요")
             return
         
         if prices.empty:
-            st.error(f"❌ No data available for {selected_ticker}")
-            st.info("Possible reasons:")
-            st.write("- Ticker symbol may be incorrect")
-            st.write("- Data may not be available for this date range")
-            st.write("- Network connection issue with Yahoo Finance")
-            st.write("- Try refreshing or selecting a different ticker")
+            st.error(f"❌ 사용 가능한 데이터 없음: {selected_ticker}")
+            st.info("가능한 이유:")
+            st.write("- 잘못된 티커 기호")
+            st.write("- 해당 기간에 거래 데이터 없음")
+            st.write("- Yahoo Finance 일시 중단")
             return
         
         if len(prices) < 30:
-            st.warning(f"⚠️  Only {len(prices)} data points available. Minimum recommended is 30.")
+            st.warning(f"⚠️  데이터 포인트 부족: {len(prices)}개 (권장: 30개)")
             if len(prices) < 20:
-                st.error("Not enough data for reliable technical analysis.")
+                st.error("❌ 기술 분석에 필요한 최소 데이터 부족 (20개)")
                 return
         
         # Get the price series
@@ -1186,26 +1203,26 @@ def show_day_trading_analysis():
                 price_series = prices[selected_ticker]
             elif len(prices.columns) > 0:
                 price_series = prices.iloc[:, 0]
-                st.info(f"Using column: {prices.columns[0]}")
+                st.info(f"📍 사용 컬럼: {prices.columns[0]}")
             else:
-                st.error(f"❌ No price data for {selected_ticker}")
+                st.error(f"❌ 가격 데이터 없음: {selected_ticker}")
                 return
         else:
             price_series = prices
         
         # Verify price series
         if price_series is None or len(price_series) == 0:
-            st.error(f"❌ Price series is empty for {selected_ticker}")
+            st.error(f"❌ 가격 시리즈 비어있음: {selected_ticker}")
             return
         
-        st.success(f"✓ Downloaded {len(price_series)} trading days for {selected_ticker}")
-        st.write(f"📅 Date range: {price_series.index[0].date()} to {price_series.index[-1].date()}")
+        st.success(f"✓ 데이터 로드 완료: {len(price_series)}개 거래일")
+        st.write(f"📅 기간: {price_series.index[0].date()} ~ {price_series.index[-1].date()}")
         
         st.divider()
         
         # Check if we have enough data for indicators
         if len(price_series) < 26:
-            st.error("❌ Not enough data for technical indicators (need at least 26 data points)")
+            st.error("❌ 지표 계산 불가 (최소 26개 필요)")
             return
         
         # Initialize day trading strategy
@@ -1220,13 +1237,13 @@ def show_day_trading_analysis():
         signals_dict = dt_strategy.generate_signals(pd.DataFrame({selected_ticker: price_series}))
         
         if not signals_dict or selected_ticker not in signals_dict:
-            st.error(f"❌ Could not generate signals for {selected_ticker}")
+            st.error(f"❌ 신호 생성 실패: {selected_ticker}")
             return
         
         indicators = signals_dict[selected_ticker]
         
         # Display current metrics
-        st.subheader("📊 Current Indicators")
+        st.subheader("📊 현재 지표")
         
         col1, col2, col3, col4 = st.columns(4)
         
@@ -1236,96 +1253,96 @@ def show_day_trading_analysis():
         current_signal = signal_line.iloc[-1]
         
         with col1:
-            st.metric("Current Price", f"${current_price:.2f}", delta=f"{price_series.pct_change().iloc[-1]:+.2%}")
+            st.metric("현재가", f"${current_price:.2f}", delta=f"{price_series.pct_change().iloc[-1]:+.2%}")
         
         with col2:
-            color_rsi = "🔴" if current_rsi > 70 else "🟢" if current_rsi < 30 else "🟡"
-            st.metric("RSI (14)", f"{current_rsi:.1f}", delta=f"{color_rsi} Status")
+            color_rsi = "🔴 과매수" if current_rsi > 70 else "🟢 과매도" if current_rsi < 30 else "🟡 중립"
+            st.metric("RSI (14)", f"{current_rsi:.1f}", delta=color_rsi)
         
         with col3:
             st.metric("MACD", f"{current_macd:.4f}", delta=f"{current_macd - current_signal:+.4f}")
         
         with col4:
-            st.metric("Signal Line", f"{current_signal:.4f}")
+            st.metric("신호선", f"{current_signal:.4f}")
         
         st.divider()
         
         # Signal generation
-        st.subheader("🎯 Trading Signal")
+        st.subheader("🎯 거래 신호")
         
         latest_signal = indicators['signal'].iloc[-1]
         
         if latest_signal == 1:
-            st.success("### 🟢 BUY SIGNAL")
+            st.success("### 🟢 매수 신호")
             st.markdown(f"""
-            **Current Setup:**
-            - RSI: {current_rsi:.1f} (Oversold < 30)
-            - Price: ${current_price:.2f}
-            - MACD: Bullish momentum detected
+            **현재 상태:**
+            - RSI: {current_rsi:.1f} (과매도 < 30)
+            - 현재가: ${current_price:.2f}
+            - MACD: 상승 모멘텀 감지됨
             
-            **Action:** Enter long position
-            **Stop Loss:** ${current_price * 0.99:.2f} (1% below)
-            **Take Profit:** ${current_price * 1.02:.2f} (2% above)
+            **거래액션:** 매수 포지션 진입
+            **손절매:** ${current_price * 0.99:.2f} (1% 하락)
+            **익절매:** ${current_price * 1.02:.2f} (2% 상승)
             """)
         elif latest_signal == -1:
-            st.error("### 🔴 SELL SIGNAL")
+            st.error("### 🔴 매도 신호")
             st.markdown(f"""
-            **Current Setup:**
-            - RSI: {current_rsi:.1f} (Overbought > 70)
-            - Price: ${current_price:.2f}
-            - MACD: Bearish momentum detected
+            **현재 상태:**
+            - RSI: {current_rsi:.1f} (과매수 > 70)
+            - 현재가: ${current_price:.2f}
+            - MACD: 하강 모멘텀 감지됨
             
-            **Action:** Exit position or short
-            **Stop Loss:** ${current_price * 1.01:.2f} (1% above)
-            **Take Profit:** ${current_price * 0.98:.2f} (2% below)
+            **거래액션:** 매도 포지션 진입
+            **손절매:** ${current_price * 1.01:.2f} (1% 상승)
+            **익절매:** ${current_price * 0.98:.2f} (2% 하락)
             """)
         else:
-            st.warning("### 🟡 HOLD SIGNAL")
+            st.warning("### 🟡 관망 신호")
             st.markdown(f"""
-            **Current Setup:**
-            - RSI: {current_rsi:.1f} (Neutral 30-70)
-            - Price: ${current_price:.2f}
-            - MACD: Mixed signals
+            **현재 상태:**
+            - RSI: {current_rsi:.1f} (중립 30-70)
+            - 현재가: ${current_price:.2f}
+            - MACD: 혼합 신호
             
-            **Action:** Wait for clear signal
-            **Next Support:** ${lower_bb.iloc[-1]:.2f}
-            **Next Resistance:** ${upper_bb.iloc[-1]:.2f}
+            **거래액션:** 명확한 신호 대기
+            **다음 지지선:** ${lower_bb.iloc[-1]:.2f}
+            **다음 저항선:** ${upper_bb.iloc[-1]:.2f}
             """)
         
         st.divider()
         
         # Detailed indicator charts
-        st.subheader("📈 Technical Indicator Charts")
+        st.subheader("📈 상세 차트 분석")
         
-        tab1, tab2, tab3, tab4 = st.tabs(["Price & BB", "RSI", "MACD", "Signal Analysis"])
+        tab1, tab2, tab3, tab4 = st.tabs(["가격 & 볼린저밴드", "RSI", "MACD", "신호 이력"])
         
         with tab1:
             # Price and Bollinger Bands
             fig = go.Figure()
             
-            fig.add_trace(go.Scatter(x=price_series.index, y=price_series.values, mode='lines', name='Price', line=dict(color='black', width=2)))
-            fig.add_trace(go.Scatter(x=upper_bb.index, y=upper_bb.values, mode='lines', name='Upper BB', line=dict(color='red', dash='dash')))
-            fig.add_trace(go.Scatter(x=middle_bb.index, y=middle_bb.values, mode='lines', name='Middle BB', line=dict(color='blue', dash='dash')))
+            fig.add_trace(go.Scatter(x=price_series.index, y=price_series.values, mode='lines', name='가격', line=dict(color='black', width=2)))
+            fig.add_trace(go.Scatter(x=upper_bb.index, y=upper_bb.values, mode='lines', name='상단밴드', line=dict(color='red', dash='dash')))
+            fig.add_trace(go.Scatter(x=middle_bb.index, y=middle_bb.values, mode='lines', name='중간밴드', line=dict(color='blue', dash='dash')))
             fig.add_trace(go.Scatter(
                 x=lower_bb.index.tolist() + upper_bb.index.tolist()[::-1],
                 y=lower_bb.values.tolist() + upper_bb.values.tolist()[::-1],
                 fill='toself',
                 fillcolor='rgba(0,100,200,0.1)',
-                name='BB Band'
+                name='밴드폭'
             ))
             
-            fig.update_layout(title=f"{selected_ticker} Price & Bollinger Bands", height=400, xaxis_title="Date", yaxis_title="Price")
+            fig.update_layout(title=f"{selected_ticker} 가격 & 볼린저밴드", height=400, xaxis_title="날짜", yaxis_title="가격")
             st.plotly_chart(fig, use_container_width=True)
         
         with tab2:
             # RSI
             fig = go.Figure()
             
-            fig.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought (70)")
-            fig.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold (30)")
+            fig.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="과매수 (70)")
+            fig.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="과매도 (30)")
             fig.add_trace(go.Scatter(x=rsi.index, y=rsi.values, mode='lines', name='RSI', line=dict(color='purple')))
             
-            fig.update_layout(title=f"{selected_ticker} RSI (14)", height=400, xaxis_title="Date", yaxis_title="RSI", yaxis_range=[0, 100])
+            fig.update_layout(title=f"{selected_ticker} RSI (14)", height=400, xaxis_title="날짜", yaxis_title="RSI", yaxis_range=[0, 100])
             st.plotly_chart(fig, use_container_width=True)
         
         with tab3:
@@ -1333,10 +1350,10 @@ def show_day_trading_analysis():
             fig = go.Figure()
             
             fig.add_trace(go.Scatter(x=macd.index, y=macd.values, mode='lines', name='MACD', line=dict(color='blue')))
-            fig.add_trace(go.Scatter(x=signal_line.index, y=signal_line.values, mode='lines', name='Signal', line=dict(color='red')))
-            fig.add_trace(go.Bar(x=histogram.index, y=histogram.values, name='Histogram', marker=dict(color='gray')))
+            fig.add_trace(go.Scatter(x=signal_line.index, y=signal_line.values, mode='lines', name='신호선', line=dict(color='red')))
+            fig.add_trace(go.Bar(x=histogram.index, y=histogram.values, name='히스토그램', marker=dict(color='gray')))
             
-            fig.update_layout(title=f"{selected_ticker} MACD", height=400, xaxis_title="Date", yaxis_title="MACD")
+            fig.update_layout(title=f"{selected_ticker} MACD", height=400, xaxis_title="날짜", yaxis_title="MACD")
             st.plotly_chart(fig, use_container_width=True)
         
         with tab4:
@@ -1344,32 +1361,32 @@ def show_day_trading_analysis():
             recent_signals = indicators[['signal', 'rsi', 'macd', 'histogram']].tail(20).copy()
             
             signal_display = recent_signals.copy()
-            signal_display.columns = ['Signal', 'RSI', 'MACD', 'Histogram']
-            signal_display['Signal'] = signal_display['Signal'].apply(lambda x: '🟢 BUY' if x == 1 else '🔴 SELL' if x == -1 else '⚪ HOLD')
+            signal_display.columns = ['신호', 'RSI', 'MACD', '히스토그램']
+            signal_display['신호'] = signal_display['신호'].apply(lambda x: '🟢 매수' if x == 1 else '🔴 매도' if x == -1 else '⚪ 관망')
             
             st.dataframe(signal_display, use_container_width=True)
         
         st.divider()
         
         # Risk Management
-        st.subheader("⚠️ Risk Management Rules")
+        st.subheader("⚠️ 위험관리 규칙")
         
         col1, col2 = st.columns(2)
         
         with col1:
             st.warning("""
-            **Position Sizing:**
-            - Max 2% per trade
-            - Stop loss at 1%
-            - Take profit at 2%
+            **포지션 크기:**
+            - 거래당 최대 2%
+            - 손절매: 1%
+            - 익절매: 2%
             """)
         
         with col2:
             st.info("""
-            **Daily Rules:**
-            - Max 3 trades per day
-            - First trade 10:00-11:00 AM
-            - Last trade close by 3:00 PM
+            **일일 거래 규칙:**
+            - 일일 최대 3회 거래
+            - 첫 거래: 오전 10:00-11:00
+            - 마지막 거래: 오후 3:00 이전
             """)
     
     except Exception as e:
