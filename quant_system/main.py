@@ -869,13 +869,28 @@ def generate_summary_report(analyzer, results, metrics):
 def show_what_to_do():
     """
     Show current top 3 ETFs to buy today with detailed analysis.
+    Also compare custom ticker with the 20 default tickers.
     """
     st.subheader("💰 Current Recommendation")
     
+    # Sidebar: Custom ticker comparison
+    st.sidebar.subheader("🔍 Ticker Comparison")
+    custom_ticker = st.sidebar.text_input(
+        "Compare with our 20 ETFs",
+        value="",
+        placeholder="예: AAPL, MSFT, TSLA",
+        help="20개 ETF와 비교하고 싶은 티커를 입력하세요"
+    ).upper().strip()
+    
     try:
         with st.spinner("Analyzing today's market..."):
+            # Determine tickers to download
+            download_tickers = ALL_TICKERS.copy()
+            if custom_ticker and custom_ticker not in download_tickers:
+                download_tickers.append(custom_ticker)
+            
             # Download today's data
-            prices = download_price_data(ALL_TICKERS, start_date='2010-01-01', end_date=None)
+            prices = download_price_data(download_tickers, start_date='2010-01-01', end_date=None)
             
             # Calculate ranking
             ranker = ETFRanker(max_positions=3)
@@ -887,6 +902,160 @@ def show_what_to_do():
             regime_filter = RegimeFilter(benchmark='SPY', ma_period=200)
             regime = regime_filter.calculate_regime(prices)
             current_regime = regime.iloc[-1]
+        
+        # Display custom ticker comparison if provided
+        if custom_ticker:
+            if custom_ticker in prices.columns:
+                st.info(f"🔍 **{custom_ticker} 비교 분석**")
+                
+                # Get ranking info for custom ticker
+                custom_rank_row = latest_ranking[latest_ranking['ticker'] == custom_ticker]
+                
+                if len(custom_rank_row) > 0:
+                    custom_rank = int(custom_rank_row['rank'].iloc[0])
+                    custom_score = custom_rank_row['score'].iloc[0]
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    # Ranking position
+                    with col1:
+                        st.metric(
+                            "전체 순위",
+                            f"#{custom_rank}위",
+                            delta=f"20개 중" if custom_rank <= 20 else "랭킹 외"
+                        )
+                    
+                    # Score comparison with top 1
+                    with col2:
+                        top_score = latest_ranking.iloc[0]['score']
+                        score_diff = custom_score - top_score
+                        st.metric(
+                            "점수",
+                            f"{custom_score:.4f}",
+                            delta=f"1위 대비 {score_diff:+.4f}"
+                        )
+                    
+                    # Price and returns
+                    with col3:
+                        current_price = prices[custom_ticker].iloc[-1]
+                        change_5d = prices[custom_ticker].pct_change(5).iloc[-1]
+                        st.metric(
+                            f"{custom_ticker} 가격",
+                            f"${current_price:.2f}",
+                            delta=f"5일: {change_5d:+.2%}"
+                        )
+                    
+                    # Signal
+                    with col4:
+                        if custom_rank <= 3:
+                            signal_text = "🟢 매수"
+                        elif custom_rank <= 7:
+                            signal_text = "🟡 관망"
+                        else:
+                            signal_text = "🔴 회피"
+                        
+                        st.metric(
+                            "추천",
+                            signal_text
+                        )
+                    
+                    st.divider()
+                    
+                    # Detailed comparison with top 5
+                    st.markdown("**상위 5개 및 비교 대상 티커**")
+                    
+                    top_5 = latest_ranking.head(5)
+                    comparison_tickers = list(top_5['ticker']) + [custom_ticker]
+                    comparison_tickers = list(dict.fromkeys(comparison_tickers))  # Remove duplicates
+                    
+                    comparison_data = []
+                    for ticker in comparison_tickers:
+                        if ticker not in prices.columns:
+                            continue
+                        
+                        rank_row = latest_ranking[latest_ranking['ticker'] == ticker]
+                        if len(rank_row) == 0:
+                            continue
+                        
+                        rank = int(rank_row['rank'].iloc[0])
+                        score = rank_row['score'].iloc[0]
+                        
+                        current_price = prices[ticker].iloc[-1]
+                        change_1d = prices[ticker].pct_change(1).iloc[-1]
+                        change_5d = prices[ticker].pct_change(5).iloc[-1]
+                        change_20d = prices[ticker].pct_change(20).iloc[-1]
+                        
+                        comparison_data.append({
+                            '순위': rank,
+                            '티커': '⭐ ' + ticker if ticker == custom_ticker else ticker,
+                            '점수': f"{score:.4f}",
+                            '가격': f"${current_price:.2f}",
+                            '1일': f"{change_1d:+.2%}",
+                            '5일': f"{change_5d:+.2%}",
+                            '20일': f"{change_20d:+.2%}"
+                        })
+                    
+                    df_comp = pd.DataFrame(comparison_data)
+                    st.dataframe(df_comp, use_container_width=True, hide_index=True)
+                    
+                    st.divider()
+                    
+                    # Comparison chart
+                    st.markdown("**성과 비교 차트**")
+                    
+                    chart_tickers = comparison_tickers[:6]  # Top 5 + custom
+                    chart_data = []
+                    
+                    for ticker in chart_tickers:
+                        if ticker not in prices.columns:
+                            continue
+                        
+                        rank_row = latest_ranking[latest_ranking['ticker'] == ticker]
+                        score = rank_row['score'].iloc[0] if len(rank_row) > 0 else 0
+                        ret_5d = prices[ticker].pct_change(5).iloc[-1] * 100
+                        
+                        chart_data.append({
+                            'Ticker': ticker,
+                            'Score': score,
+                            'Return (5D)': ret_5d,
+                            'Is Custom': ticker == custom_ticker
+                        })
+                    
+                    df_chart = pd.DataFrame(chart_data)
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Score comparison
+                        fig_score = px.bar(
+                            df_chart.sort_values('Score', ascending=True),
+                            x='Score',
+                            y='Ticker',
+                            orientation='h',
+                            color='Is Custom',
+                            color_discrete_map={True: '#FF6B6B', False: '#4ECDC4'},
+                            title='점수 비교'
+                        )
+                        st.plotly_chart(fig_score, use_container_width=True)
+                    
+                    with col2:
+                        # Return comparison
+                        fig_ret = px.bar(
+                            df_chart.sort_values('Return (5D)', ascending=True),
+                            x='Return (5D)',
+                            y='Ticker',
+                            orientation='h',
+                            color='Is Custom',
+                            color_discrete_map={True: '#FF6B6B', False: '#4ECDC4'},
+                            title='5일 수익률 비교'
+                        )
+                        st.plotly_chart(fig_ret, use_container_width=True)
+                else:
+                    st.warning(f"⚠️ {custom_ticker} 순위 정보를 찾을 수 없습니다.")
+            else:
+                st.error(f"❌ {custom_ticker} 데이터를 다운로드할 수 없습니다. 올바른 티커를 확인해주세요.")
+        
+        st.divider()
         
         # Display top 3 ETFs with signals
         st.success("✅ Today's Top 3 ETFs (Updated Daily)")
