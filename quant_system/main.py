@@ -1113,18 +1113,30 @@ def show_day_trading_analysis():
             index=0
         )
     with col2:
-        lookback_days = st.sidebar.slider("Lookback Period (days)", min_value=5, max_value=60, value=30)
+        lookback_days = st.sidebar.slider("Lookback Period (days)", min_value=30, max_value=365, value=90)
     
     try:
         # Download recent data
         st.info("📥 Downloading recent price data...")
-        start_date = (pd.Timestamp.today() - pd.Timedelta(days=lookback_days)).strftime('%Y-%m-%d')
+        
+        # Use longer lookback period to ensure we get data
+        start_date = (pd.Timestamp.today() - pd.Timedelta(days=max(lookback_days, 90))).strftime('%Y-%m-%d')
+        st.write(f"📊 Requesting data from {start_date} to today for {selected_ticker}...")
         
         prices = download_price_data([selected_ticker], start_date=start_date)
         
-        if prices is None or prices.empty:
+        if prices is None:
+            st.error(f"❌ download_price_data returned None for {selected_ticker}")
+            st.info("Try a different ticker or increase the lookback period.")
+            return
+        
+        if prices.empty:
             st.error(f"❌ No data available for {selected_ticker}")
-            st.info("Try selecting a different ticker or extends the lookback period.")
+            st.info("Possible reasons:")
+            st.write("- Ticker symbol may be incorrect")
+            st.write("- Data may not be available for this date range")
+            st.write("- Network connection issue with Yahoo Finance")
+            st.write("- Try refreshing or selecting a different ticker")
             return
         
         if len(prices) < 30:
@@ -1139,13 +1151,20 @@ def show_day_trading_analysis():
                 price_series = prices[selected_ticker]
             elif len(prices.columns) > 0:
                 price_series = prices.iloc[:, 0]
+                st.info(f"Using column: {prices.columns[0]}")
             else:
                 st.error(f"❌ No price data for {selected_ticker}")
                 return
         else:
             price_series = prices
         
+        # Verify price series
+        if price_series is None or len(price_series) == 0:
+            st.error(f"❌ Price series is empty for {selected_ticker}")
+            return
+        
         st.success(f"✓ Downloaded {len(price_series)} trading days for {selected_ticker}")
+        st.write(f"📅 Date range: {price_series.index[0].date()} to {price_series.index[-1].date()}")
         
         st.divider()
         

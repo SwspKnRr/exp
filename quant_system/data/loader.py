@@ -47,20 +47,27 @@ def download_price_data(
         tickers = ALL_TICKERS
     
     print(f"Downloading data for {len(tickers)} tickers from {start_date} to {end_date}...")
+    print(f"Tickers: {tickers}")
     
-    # Download data
-    data = yf.download(
-        tickers,
-        start=start_date,
-        end=end_date,
-        progress=True,
-        ignore_tz=True
-    )
+    try:
+        # Download data
+        data = yf.download(
+            tickers,
+            start=start_date,
+            end=end_date,
+            progress=False,  # Disable progress bar for cleaner logs
+            ignore_tz=True
+        )
+    except Exception as e:
+        print(f"⚠️  Error downloading data: {e}")
+        return pd.DataFrame()
     
     # Check if data is empty
     if data is None or len(data) == 0:
         print("⚠️  No data returned from yfinance")
         return pd.DataFrame()
+    
+    print(f"Raw data type: {type(data)}, shape: {data.shape if hasattr(data, 'shape') else 'N/A'}")
     
     # Extract closing prices
     # yfinance returns MultiIndex columns: (Price Type, Ticker)
@@ -69,68 +76,87 @@ def download_price_data(
     if len(tickers) == 1:
         # Single ticker case
         ticker = tickers[0]
+        print(f"Processing single ticker: {ticker}")
         
         if isinstance(data, pd.Series):
             # data is already a Series (single ticker, single price type)
+            print(f"  → Data is a Series: {len(data)} rows")
             prices = data.to_frame(name=ticker)
         elif isinstance(data, pd.DataFrame):
             # data is a DataFrame
+            print(f"  → Data is DataFrame with columns: {list(data.columns)}")
             if 'Close' in data.columns:
                 close_col = data['Close']
                 if isinstance(close_col, pd.Series):
+                    print(f"    → Using 'Close' column: {len(close_col)} rows")
                     prices = close_col.to_frame(name=ticker)
                 else:
                     # Single scalar - need to handle this case
-                    print(f"⚠️  Only received single scalar value for {ticker}, skipping")
+                    print(f"⚠️  'Close' column is not a Series: {type(close_col)}")
             else:
                 # Try to use the first column
                 first_col = data.iloc[:, 0]
+                print(f"    → Using first column: {first_col.name}, {len(first_col)} rows")
                 if isinstance(first_col, pd.Series) and len(first_col) > 0:
                     prices = first_col.to_frame(name=ticker)
                 else:
                     print(f"⚠️  Could not extract valid price data for {ticker}")
     else:
         # Multiple tickers case
+        print(f"Processing multiple tickers: {len(tickers)}")
+        print(f"  → Data columns type: {type(data.columns)}")
+        
         if isinstance(data.columns, pd.MultiIndex):
             # Access by price type: 'Close' is at level 0
+            print(f"  → MultiIndex detected, levels: {data.columns.names}")
             try:
                 prices = data.xs('Close', level=0, axis=1)
+                print(f"    → Extracted 'Close' prices: {prices.shape}")
             except KeyError:
                 # 'Close' not in MultiIndex, try first level
+                print(f"⚠️  'Close' not in MultiIndex, using first level")
                 prices = data
         elif 'Close' in data.columns:
             # Simple columns, Close is available
+            print(f"  → Simple columns with 'Close'")
             prices = data[['Close']]
             prices.columns = [col[1] if isinstance(col, tuple) else col for col in prices.columns]
         else:
             # Fallback: use all data
+            print(f"⚠️  No 'Close' column found, using all data")
             prices = data
     
     # Check if we got any prices
     if prices is None:
-        print("⚠️  Could not extract price data")
+        print("⚠️  prices is None after processing")
         return pd.DataFrame()
     
     # Ensure prices is a DataFrame
     if isinstance(prices, pd.Series):
         prices = prices.to_frame()
     
+    print(f"Prices shape before filtering: {prices.shape}")
+    print(f"Prices columns: {list(prices.columns)}")
+    
     # Filter to only include tickers that were successfully downloaded
     if len(prices.columns) > 0:
         available_cols = [col for col in tickers if col in prices.columns]
+        print(f"Available tickers: {available_cols}")
         if len(available_cols) > 0:
             prices = prices[available_cols]
         else:
             # No requested tickers found, just keep what we have
-            pass
+            print(f"⚠️  No requested tickers found, keeping all columns: {list(prices.columns)}")
     
     # Remove rows with NaN values
+    print(f"Rows before dropna: {len(prices)}")
     prices = prices.dropna()
+    print(f"Rows after dropna: {len(prices)}")
     
     if len(prices) > 0:
-        print(f"\nDownloaded data shape: {prices.shape}")
-        print(f"Date range: {prices.index[0].date()} to {prices.index[-1].date()}")
-        print(f"Successfully loaded tickers: {list(prices.columns)}")
+        print(f"\n✓ Downloaded data shape: {prices.shape}")
+        print(f"✓ Date range: {prices.index[0].date()} to {prices.index[-1].date()}")
+        print(f"✓ Successfully loaded tickers: {list(prices.columns)}")
     else:
         print("⚠️  No valid data after filtering NaN values")
     
