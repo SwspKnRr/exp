@@ -1122,22 +1122,37 @@ def show_day_trading_analysis():
         
         prices = download_price_data([selected_ticker], start_date=start_date)
         
-        if prices is None or len(prices) == 0:
+        if prices is None or prices.empty:
             st.error(f"❌ No data available for {selected_ticker}")
+            st.info("Try selecting a different ticker or extends the lookback period.")
             return
+        
+        if len(prices) < 30:
+            st.warning(f"⚠️  Only {len(prices)} data points available. Minimum recommended is 30.")
+            if len(prices) < 20:
+                st.error("Not enough data for reliable technical analysis.")
+                return
         
         # Get the price series
         if isinstance(prices, pd.DataFrame):
             if selected_ticker in prices.columns:
                 price_series = prices[selected_ticker]
-            else:
+            elif len(prices.columns) > 0:
                 price_series = prices.iloc[:, 0]
+            else:
+                st.error(f"❌ No price data for {selected_ticker}")
+                return
         else:
             price_series = prices
         
         st.success(f"✓ Downloaded {len(price_series)} trading days for {selected_ticker}")
         
         st.divider()
+        
+        # Check if we have enough data for indicators
+        if len(price_series) < 26:
+            st.error("❌ Not enough data for technical indicators (need at least 26 data points)")
+            return
         
         # Initialize day trading strategy
         dt_strategy = DayTradingSignals()
@@ -1150,7 +1165,7 @@ def show_day_trading_analysis():
         # Generate signals
         signals_dict = dt_strategy.generate_signals(pd.DataFrame({selected_ticker: price_series}))
         
-        if selected_ticker not in signals_dict:
+        if not signals_dict or selected_ticker not in signals_dict:
             st.error(f"❌ Could not generate signals for {selected_ticker}")
             return
         

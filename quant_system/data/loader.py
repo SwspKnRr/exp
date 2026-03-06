@@ -57,41 +57,82 @@ def download_price_data(
         ignore_tz=True
     )
     
+    # Check if data is empty
+    if data is None or len(data) == 0:
+        print("⚠️  No data returned from yfinance")
+        return pd.DataFrame()
+    
     # Extract closing prices
     # yfinance returns MultiIndex columns: (Price Type, Ticker)
+    prices = None
+    
     if len(tickers) == 1:
-        # Single ticker: data.columns is simple Index, not MultiIndex
-        if isinstance(data, pd.DataFrame):
+        # Single ticker case
+        ticker = tickers[0]
+        
+        if isinstance(data, pd.Series):
+            # data is already a Series (single ticker, single price type)
+            prices = data.to_frame(name=ticker)
+        elif isinstance(data, pd.DataFrame):
+            # data is a DataFrame
             if 'Close' in data.columns:
-                prices = pd.DataFrame({tickers[0]: data['Close']})
+                close_col = data['Close']
+                if isinstance(close_col, pd.Series):
+                    prices = close_col.to_frame(name=ticker)
+                else:
+                    # Single scalar - need to handle this case
+                    print(f"⚠️  Only received single scalar value for {ticker}, skipping")
             else:
-                prices = pd.DataFrame({tickers[0]: data.iloc[:, 0]})
-        else:
-            # data is a Series (single ticker)
-            prices = pd.DataFrame({tickers[0]: data})
+                # Try to use the first column
+                first_col = data.iloc[:, 0]
+                if isinstance(first_col, pd.Series) and len(first_col) > 0:
+                    prices = first_col.to_frame(name=ticker)
+                else:
+                    print(f"⚠️  Could not extract valid price data for {ticker}")
     else:
-        # Multiple tickers: extract Close prices from MultiIndex
+        # Multiple tickers case
         if isinstance(data.columns, pd.MultiIndex):
             # Access by price type: 'Close' is at level 0
-            prices = data.xs('Close', level=0, axis=1)
+            try:
+                prices = data.xs('Close', level=0, axis=1)
+            except KeyError:
+                # 'Close' not in MultiIndex, try first level
+                prices = data
+        elif 'Close' in data.columns:
+            # Simple columns, Close is available
+            prices = data[['Close']]
+            prices.columns = [col[1] if isinstance(col, tuple) else col for col in prices.columns]
         else:
-            # Fallback for older yfinance versions
-            prices = data['Close'] if 'Close' in data.columns else data
+            # Fallback: use all data
+            prices = data
+    
+    # Check if we got any prices
+    if prices is None:
+        print("⚠️  Could not extract price data")
+        return pd.DataFrame()
     
     # Ensure prices is a DataFrame
     if isinstance(prices, pd.Series):
-        prices = pd.DataFrame(prices)
+        prices = prices.to_frame()
     
     # Filter to only include tickers that were successfully downloaded
-    prices = prices[[ticker for ticker in tickers if ticker in prices.columns]]
+    if len(prices.columns) > 0:
+        available_cols = [col for col in tickers if col in prices.columns]
+        if len(available_cols) > 0:
+            prices = prices[available_cols]
+        else:
+            # No requested tickers found, just keep what we have
+            pass
     
     # Remove rows with NaN values
     prices = prices.dropna()
     
-    print(f"\nDownloaded data shape: {prices.shape}")
     if len(prices) > 0:
+        print(f"\nDownloaded data shape: {prices.shape}")
         print(f"Date range: {prices.index[0].date()} to {prices.index[-1].date()}")
-    print(f"Successfully loaded tickers: {list(prices.columns)}")
+        print(f"Successfully loaded tickers: {list(prices.columns)}")
+    else:
+        print("⚠️  No valid data after filtering NaN values")
     
     return prices
 
