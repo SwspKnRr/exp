@@ -61,9 +61,13 @@ def download_price_data(
     # yfinance returns MultiIndex columns: (Price Type, Ticker)
     if len(tickers) == 1:
         # Single ticker: data.columns is simple Index, not MultiIndex
-        if 'Close' in data.columns:
-            prices = pd.DataFrame({tickers[0]: data['Close']})
+        if isinstance(data, pd.DataFrame):
+            if 'Close' in data.columns:
+                prices = pd.DataFrame({tickers[0]: data['Close']})
+            else:
+                prices = pd.DataFrame({tickers[0]: data.iloc[:, 0]})
         else:
+            # data is a Series (single ticker)
             prices = pd.DataFrame({tickers[0]: data})
     else:
         # Multiple tickers: extract Close prices from MultiIndex
@@ -74,6 +78,10 @@ def download_price_data(
             # Fallback for older yfinance versions
             prices = data['Close'] if 'Close' in data.columns else data
     
+    # Ensure prices is a DataFrame
+    if isinstance(prices, pd.Series):
+        prices = pd.DataFrame(prices)
+    
     # Filter to only include tickers that were successfully downloaded
     prices = prices[[ticker for ticker in tickers if ticker in prices.columns]]
     
@@ -81,7 +89,8 @@ def download_price_data(
     prices = prices.dropna()
     
     print(f"\nDownloaded data shape: {prices.shape}")
-    print(f"Date range: {prices.index[0].date()} to {prices.index[-1].date()}")
+    if len(prices) > 0:
+        print(f"Date range: {prices.index[0].date()} to {prices.index[-1].date()}")
     print(f"Successfully loaded tickers: {list(prices.columns)}")
     
     return prices

@@ -164,21 +164,23 @@ class DayTradingSignals:
         
         signals = {}
         
-        # Handle both OHLCV DataFrame and simple close prices
-        if isinstance(prices, pd.DataFrame) and prices.shape[1] > 1:
-            # Multi-column OHLCV data
-            tickers = prices.columns.get_level_0().unique() if isinstance(prices.columns, pd.MultiIndex) else prices.columns
-            close_prices = prices if prices.shape[1] == len(tickers) else prices.xs('Close', level=1, axis=1) if isinstance(prices.columns, pd.MultiIndex) else prices
+        # Ensure prices is a DataFrame
+        if isinstance(prices, pd.Series):
+            close_prices = pd.DataFrame({prices.name or 'price': prices})
+        elif not isinstance(prices, pd.DataFrame):
+            close_prices = pd.DataFrame(prices)
         else:
-            # Simple close prices
-            close_prices = prices if isinstance(prices, pd.Series) else prices.iloc[:, 0]
+            close_prices = prices
         
-        # If single series, wrap in dict
-        if isinstance(close_prices, pd.Series):
-            close_prices = {close_prices.name: close_prices}
+        # Get column names (tickers)
+        tickers = close_prices.columns.tolist()
         
-        for ticker in close_prices.columns:
+        for ticker in tickers:
             price = close_prices[ticker]
+            
+            # Skip if insufficient data
+            if len(price) < max(self.bb_period, self.macd_slow):
+                continue
             
             # Calculate indicators
             rsi = self.calculate_rsi(price)

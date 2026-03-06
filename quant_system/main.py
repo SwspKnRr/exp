@@ -1118,12 +1118,24 @@ def show_day_trading_analysis():
     try:
         # Download recent data
         st.info("📥 Downloading recent price data...")
-        prices = download_price_data([selected_ticker], start_date=(pd.Timestamp.today() - pd.Timedelta(days=lookback_days)).strftime('%Y-%m-%d'))
+        start_date = (pd.Timestamp.today() - pd.Timedelta(days=lookback_days)).strftime('%Y-%m-%d')
         
+        prices = download_price_data([selected_ticker], start_date=start_date)
+        
+        if prices is None or len(prices) == 0:
+            st.error(f"❌ No data available for {selected_ticker}")
+            return
+        
+        # Get the price series
         if isinstance(prices, pd.DataFrame):
-            prices = prices[selected_ticker]
+            if selected_ticker in prices.columns:
+                price_series = prices[selected_ticker]
+            else:
+                price_series = prices.iloc[:, 0]
+        else:
+            price_series = prices
         
-        st.success(f"✓ Downloaded {len(prices)} trading days for {selected_ticker}")
+        st.success(f"✓ Downloaded {len(price_series)} trading days for {selected_ticker}")
         
         st.divider()
         
@@ -1131,12 +1143,17 @@ def show_day_trading_analysis():
         dt_strategy = DayTradingSignals()
         
         # Calculate indicators
-        rsi = dt_strategy.calculate_rsi(prices)
-        macd, signal_line, histogram = dt_strategy.calculate_macd(prices)
-        upper_bb, middle_bb, lower_bb = dt_strategy.calculate_bollinger_bands(prices)
+        rsi = dt_strategy.calculate_rsi(price_series)
+        macd, signal_line, histogram = dt_strategy.calculate_macd(price_series)
+        upper_bb, middle_bb, lower_bb = dt_strategy.calculate_bollinger_bands(price_series)
         
         # Generate signals
-        signals_dict = dt_strategy.generate_signals(pd.DataFrame({selected_ticker: prices}))
+        signals_dict = dt_strategy.generate_signals(pd.DataFrame({selected_ticker: price_series}))
+        
+        if selected_ticker not in signals_dict:
+            st.error(f"❌ Could not generate signals for {selected_ticker}")
+            return
+        
         indicators = signals_dict[selected_ticker]
         
         # Display current metrics
@@ -1144,13 +1161,13 @@ def show_day_trading_analysis():
         
         col1, col2, col3, col4 = st.columns(4)
         
-        current_price = prices.iloc[-1]
+        current_price = price_series.iloc[-1]
         current_rsi = rsi.iloc[-1]
         current_macd = macd.iloc[-1]
         current_signal = signal_line.iloc[-1]
         
         with col1:
-            st.metric("Current Price", f"${current_price:.2f}", delta=f"{prices.pct_change().iloc[-1]:+.2%}")
+            st.metric("Current Price", f"${current_price:.2f}", delta=f"{price_series.pct_change().iloc[-1]:+.2%}")
         
         with col2:
             color_rsi = "🔴" if current_rsi > 70 else "🟢" if current_rsi < 30 else "🟡"
@@ -1217,7 +1234,7 @@ def show_day_trading_analysis():
             # Price and Bollinger Bands
             fig = go.Figure()
             
-            fig.add_trace(go.Scatter(x=prices.index, y=prices.values, mode='lines', name='Price', line=dict(color='black', width=2)))
+            fig.add_trace(go.Scatter(x=price_series.index, y=price_series.values, mode='lines', name='Price', line=dict(color='black', width=2)))
             fig.add_trace(go.Scatter(x=upper_bb.index, y=upper_bb.values, mode='lines', name='Upper BB', line=dict(color='red', dash='dash')))
             fig.add_trace(go.Scatter(x=middle_bb.index, y=middle_bb.values, mode='lines', name='Middle BB', line=dict(color='blue', dash='dash')))
             fig.add_trace(go.Scatter(
@@ -1255,7 +1272,7 @@ def show_day_trading_analysis():
         
         with tab4:
             # Signal history (last 20 days)
-            recent_signals = indicators[['signal', 'rsi', 'macd', 'histogram']].tail(20)
+            recent_signals = indicators[['signal', 'rsi', 'macd', 'histogram']].tail(20).copy()
             
             signal_display = recent_signals.copy()
             signal_display.columns = ['Signal', 'RSI', 'MACD', 'Histogram']
