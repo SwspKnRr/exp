@@ -31,7 +31,13 @@ def calculate_returns(prices: pd.DataFrame, periods: List[int] = None) -> pd.Dat
     returns = pd.DataFrame(index=prices.index)
     
     for period in periods:
-        returns[f'return_{period}d'] = prices.pct_change(period)
+        # Calculate pct_change for each ticker separately
+        pct_changes = prices.pct_change(period)
+        
+        # Add each ticker's returns with proper column names
+        for ticker in prices.columns:
+            if ticker in pct_changes.columns:
+                returns[f'{ticker}_return_{period}d'] = pct_changes[ticker]
     
     return returns
 
