@@ -35,6 +35,7 @@ from features.macro import create_macro_features, calculate_regime_filter
 from strategy.regime_filter import RegimeFilter
 from strategy.dual_momentum import DualMomentum
 from strategy.ranking import ETFRanker
+from strategy.day_trading import DayTradingSignals
 
 from ml.model import MomentumClassifier
 from ml.filter import MLSignalFilter
@@ -1090,6 +1091,207 @@ def show_what_to_do():
         st.error(traceback.format_exc())
 
 
+def show_day_trading_analysis():
+    """
+    Analyze intraday trading signals using RSI, MACD, Bollinger Bands.
+    """
+    
+    st.header("⚡ Day Trading Analysis")
+    st.markdown("""
+    Real-time intraday trading signals using short-term technical indicators.
+    """)
+    
+    st.divider()
+    
+    # Sidebar configuration for day trading
+    st.sidebar.subheader("🕐 Day Trading Settings")
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        selected_ticker = st.sidebar.selectbox(
+            "Select ETF",
+            options=['SPY', 'QQQ', 'IWM', 'GLD', 'TLT', 'XLK', 'XLF', 'XLE', 'XLV', 'XLY'],
+            index=0
+        )
+    with col2:
+        lookback_days = st.sidebar.slider("Lookback Period (days)", min_value=5, max_value=60, value=30)
+    
+    try:
+        # Download recent data
+        st.info("📥 Downloading recent price data...")
+        prices = download_price_data([selected_ticker], start_date=(pd.Timestamp.today() - pd.Timedelta(days=lookback_days)).strftime('%Y-%m-%d'))
+        
+        if isinstance(prices, pd.DataFrame):
+            prices = prices[selected_ticker]
+        
+        st.success(f"✓ Downloaded {len(prices)} trading days for {selected_ticker}")
+        
+        st.divider()
+        
+        # Initialize day trading strategy
+        dt_strategy = DayTradingSignals()
+        
+        # Calculate indicators
+        rsi = dt_strategy.calculate_rsi(prices)
+        macd, signal_line, histogram = dt_strategy.calculate_macd(prices)
+        upper_bb, middle_bb, lower_bb = dt_strategy.calculate_bollinger_bands(prices)
+        
+        # Generate signals
+        signals_dict = dt_strategy.generate_signals(pd.DataFrame({selected_ticker: prices}))
+        indicators = signals_dict[selected_ticker]
+        
+        # Display current metrics
+        st.subheader("📊 Current Indicators")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        current_price = prices.iloc[-1]
+        current_rsi = rsi.iloc[-1]
+        current_macd = macd.iloc[-1]
+        current_signal = signal_line.iloc[-1]
+        
+        with col1:
+            st.metric("Current Price", f"${current_price:.2f}", delta=f"{prices.pct_change().iloc[-1]:+.2%}")
+        
+        with col2:
+            color_rsi = "🔴" if current_rsi > 70 else "🟢" if current_rsi < 30 else "🟡"
+            st.metric("RSI (14)", f"{current_rsi:.1f}", delta=f"{color_rsi} Status")
+        
+        with col3:
+            st.metric("MACD", f"{current_macd:.4f}", delta=f"{current_macd - current_signal:+.4f}")
+        
+        with col4:
+            st.metric("Signal Line", f"{current_signal:.4f}")
+        
+        st.divider()
+        
+        # Signal generation
+        st.subheader("🎯 Trading Signal")
+        
+        latest_signal = indicators['signal'].iloc[-1]
+        
+        if latest_signal == 1:
+            st.success("### 🟢 BUY SIGNAL")
+            st.markdown(f"""
+            **Current Setup:**
+            - RSI: {current_rsi:.1f} (Oversold < 30)
+            - Price: ${current_price:.2f}
+            - MACD: Bullish momentum detected
+            
+            **Action:** Enter long position
+            **Stop Loss:** ${current_price * 0.99:.2f} (1% below)
+            **Take Profit:** ${current_price * 1.02:.2f} (2% above)
+            """)
+        elif latest_signal == -1:
+            st.error("### 🔴 SELL SIGNAL")
+            st.markdown(f"""
+            **Current Setup:**
+            - RSI: {current_rsi:.1f} (Overbought > 70)
+            - Price: ${current_price:.2f}
+            - MACD: Bearish momentum detected
+            
+            **Action:** Exit position or short
+            **Stop Loss:** ${current_price * 1.01:.2f} (1% above)
+            **Take Profit:** ${current_price * 0.98:.2f} (2% below)
+            """)
+        else:
+            st.warning("### 🟡 HOLD SIGNAL")
+            st.markdown(f"""
+            **Current Setup:**
+            - RSI: {current_rsi:.1f} (Neutral 30-70)
+            - Price: ${current_price:.2f}
+            - MACD: Mixed signals
+            
+            **Action:** Wait for clear signal
+            **Next Support:** ${lower_bb.iloc[-1]:.2f}
+            **Next Resistance:** ${upper_bb.iloc[-1]:.2f}
+            """)
+        
+        st.divider()
+        
+        # Detailed indicator charts
+        st.subheader("📈 Technical Indicator Charts")
+        
+        tab1, tab2, tab3, tab4 = st.tabs(["Price & BB", "RSI", "MACD", "Signal Analysis"])
+        
+        with tab1:
+            # Price and Bollinger Bands
+            fig = go.Figure()
+            
+            fig.add_trace(go.Scatter(x=prices.index, y=prices.values, mode='lines', name='Price', line=dict(color='black', width=2)))
+            fig.add_trace(go.Scatter(x=upper_bb.index, y=upper_bb.values, mode='lines', name='Upper BB', line=dict(color='red', dash='dash')))
+            fig.add_trace(go.Scatter(x=middle_bb.index, y=middle_bb.values, mode='lines', name='Middle BB', line=dict(color='blue', dash='dash')))
+            fig.add_trace(go.Scatter(
+                x=lower_bb.index.tolist() + upper_bb.index.tolist()[::-1],
+                y=lower_bb.values.tolist() + upper_bb.values.tolist()[::-1],
+                fill='toself',
+                fillcolor='rgba(0,100,200,0.1)',
+                name='BB Band'
+            ))
+            
+            fig.update_layout(title=f"{selected_ticker} Price & Bollinger Bands", height=400, xaxis_title="Date", yaxis_title="Price")
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with tab2:
+            # RSI
+            fig = go.Figure()
+            
+            fig.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought (70)")
+            fig.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold (30)")
+            fig.add_trace(go.Scatter(x=rsi.index, y=rsi.values, mode='lines', name='RSI', line=dict(color='purple')))
+            
+            fig.update_layout(title=f"{selected_ticker} RSI (14)", height=400, xaxis_title="Date", yaxis_title="RSI", yaxis_range=[0, 100])
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with tab3:
+            # MACD
+            fig = go.Figure()
+            
+            fig.add_trace(go.Scatter(x=macd.index, y=macd.values, mode='lines', name='MACD', line=dict(color='blue')))
+            fig.add_trace(go.Scatter(x=signal_line.index, y=signal_line.values, mode='lines', name='Signal', line=dict(color='red')))
+            fig.add_trace(go.Bar(x=histogram.index, y=histogram.values, name='Histogram', marker=dict(color='gray')))
+            
+            fig.update_layout(title=f"{selected_ticker} MACD", height=400, xaxis_title="Date", yaxis_title="MACD")
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with tab4:
+            # Signal history (last 20 days)
+            recent_signals = indicators[['signal', 'rsi', 'macd', 'histogram']].tail(20)
+            
+            signal_display = recent_signals.copy()
+            signal_display.columns = ['Signal', 'RSI', 'MACD', 'Histogram']
+            signal_display['Signal'] = signal_display['Signal'].apply(lambda x: '🟢 BUY' if x == 1 else '🔴 SELL' if x == -1 else '⚪ HOLD')
+            
+            st.dataframe(signal_display, use_container_width=True)
+        
+        st.divider()
+        
+        # Risk Management
+        st.subheader("⚠️ Risk Management Rules")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.warning("""
+            **Position Sizing:**
+            - Max 2% per trade
+            - Stop loss at 1%
+            - Take profit at 2%
+            """)
+        
+        with col2:
+            st.info("""
+            **Daily Rules:**
+            - Max 3 trades per day
+            - First trade 10:00-11:00 AM
+            - Last trade close by 3:00 PM
+            """)
+    
+    except Exception as e:
+        st.error(f"❌ Error: {e}")
+        import traceback
+        st.error(traceback.format_exc())
+
+
 def main():
     """
     Main execution flow with Streamlit UI.
@@ -1140,10 +1342,13 @@ def main():
     """)
     
     # Main content with tabs
-    tab1, tab2 = st.tabs(["📌 What to Do?", "🚀 Full Pipeline"])
+    tab1, tab2, tab3 = st.tabs(["📌 What to Do?", "🚀 Full Pipeline", "⚡ Day Trading"])
     
     with tab1:
         show_what_to_do()
+    
+    with tab3:
+        show_day_trading_analysis()
     
     with tab2:
         run_button = st.button(
