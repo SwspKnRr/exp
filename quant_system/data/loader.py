@@ -162,25 +162,27 @@ def download_price_data(
     print(f"Rows before dropna: {len(prices)}")
     initial_rows = len(prices)
     
-    # Drop rows where ALL values are NaN (not just any NaN)
-    prices_dropped = prices.dropna(how='any')  # Strict: remove any row with NaN
+    if initial_rows == 0:
+        print("⚠️  CRITICAL: prices DataFrame is empty!")
+        return prices
     
-    # If we lose too much data, try a looser approach
-    if len(prices_dropped) < len(prices) * 0.5:
-        print(f"⚠️  Strict dropna removed {len(prices) - len(prices_dropped)} rows")
-        print(f"    Using looser approach...")
-        prices = prices.dropna(thresh=len(prices.columns) * 0.8)  # Keep if 80%+ columns have data
+    # Try strict approach first: remove any row with NaN
+    prices_strict = prices.dropna(how='any')
+    
+    # If we lose too much data (more than 50%), try a looser approach
+    if len(prices_strict) < len(prices) * 0.5:
+        print(f"⚠️  Strict dropna would remove {len(prices) - len(prices_strict)} rows ({(len(prices) - len(prices_strict))/len(prices)*100:.1f}%)")
+        print(f"    Using looser approach: keep rows with 80%+ data coverage...")
+        prices = prices.dropna(thresh=len(prices.columns) * 0.8)
     else:
-        prices = prices_dropped
+        prices = prices_strict
     
     print(f"Rows after dropna: {len(prices)}")
     
     if initial_rows > 0 and len(prices) == 0:
-        print(f"⚠️  CRITICAL: All {initial_rows} rows were removed by dropna!")
-        print(f"    This usually means all data has NaN values")
-        print(f"    Sample data:")
-        sample = prices_dropped.head()
-        print(sample)
+        print(f"⚠️  CRITICAL: All {initial_rows} rows were removed!")
+        print(f"    The first few rows had these values:")
+        print(prices_strict.head(3))
     
     if len(prices) > 0:
         print(f"\n✓ Downloaded data shape: {prices.shape}")
