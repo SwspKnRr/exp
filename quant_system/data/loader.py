@@ -100,16 +100,40 @@ def download_price_data(
             print(f"  → DataFrame 형태")
             print(f"     컬럼: {list(data.columns)}")
             
-            if 'Close' in data.columns:
+            # Handle MultiIndex columns from single ticker download
+            if isinstance(data.columns, pd.MultiIndex):
+                print(f"     MultiIndex 컬럼 감지")
+                try:
+                    # Try to extract Close with tuple key: ('Close', 'TICKER')
+                    close_col = data[('Close', ticker)]
+                    print(f"     ✓ ('Close', '{ticker}') 추출 성공: {len(close_col)} 행")
+                    prices = close_col.to_frame(name=ticker)
+                except KeyError:
+                    # Try extracting all 'Close' level
+                    try:
+                        close_df = data.xs('Close', level=0, axis=1)
+                        if isinstance(close_df, pd.Series):
+                            prices = close_df.to_frame(name=ticker)
+                        else:
+                            prices = close_df.iloc[:, 0].to_frame(name=ticker)
+                        print(f"     ✓ 'Close' 레벨 추출 성공: {len(prices)} 행")
+                    except Exception as e:
+                        print(f"     ❌ MultiIndex 추출 실패: {e}")
+            
+            # Simple column structure
+            elif 'Close' in data.columns:
                 close_col = data['Close']
                 print(f"     'Close' 컬럼 사용: {len(close_col)} 행")
                 if isinstance(close_col, pd.Series):
                     prices = close_col.to_frame(name=ticker)
                 else:
-                    print(f"     ⚠️  'Close'이 Series가 아님: {type(close_col)}")
+                    # close_col might be a DataFrame with 1 column
+                    print(f"     ⚠️  'Close'이 DataFrame, 첫 컬럼 추출")
+                    prices = close_col.iloc[:, 0].to_frame(name=ticker)
             else:
+                # No Close column, use first column
                 first_col = data.iloc[:, 0]
-                print(f"     첫 번째 컬럼 사용: {data.columns[0]}, {len(first_col)} 행")
+                print(f"     'Close' 없음, 첫 번째 컬럼 사용: {data.columns[0]}")
                 if isinstance(first_col, pd.Series) and len(first_col) > 0:
                     prices = first_col.to_frame(name=ticker)
                 else:
