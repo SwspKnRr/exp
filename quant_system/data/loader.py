@@ -46,8 +46,12 @@ def download_price_data(
     if tickers is None:
         tickers = ALL_TICKERS
     
-    print(f"Downloading data for {len(tickers)} tickers from {start_date} to {end_date}...")
-    print(f"Tickers: {tickers}")
+    print(f"\n{'='*60}")
+    print(f"📥 데이터 다운로드 시작")
+    print(f"{'='*60}")
+    print(f"기간: {start_date} ~ {end_date}")
+    print(f"티커: {tickers}")
+    print(f"{'='*60}\n")
     
     try:
         # Download data
@@ -55,141 +59,130 @@ def download_price_data(
             tickers,
             start=start_date,
             end=end_date,
-            progress=False,  # Disable progress bar for cleaner logs
+            progress=False,
             ignore_tz=True
         )
+        print(f"✓ yfinance 다운로드 성공")
     except Exception as e:
-        print(f"⚠️  Error downloading data: {e}")
+        print(f"❌ yfinance 다운로드 실패: {e}")
         import traceback
         traceback.print_exc()
         return pd.DataFrame()
     
     # Check if data is empty
+    print(f"📊 다운로드된 데이터 타입: {type(data)}")
+    print(f"📊 데이터 형태: {data.shape if hasattr(data, 'shape') else 'N/A'}")
+    
     if data is None:
-        print("⚠️  yfinance returned None")
+        print("❌ yfinance가 None을 반환했습니다")
         return pd.DataFrame()
     
     if isinstance(data, pd.DataFrame) and data.empty:
-        print("⚠️  yfinance returned empty DataFrame")
+        print("❌ yfinance가 빈 DataFrame을 반환했습니다")
         return pd.DataFrame()
     
     if isinstance(data, pd.Series) and len(data) == 0:
-        print("⚠️  yfinance returned empty Series")
+        print("❌ yfinance가 빈 Series를 반환했습니다")
         return pd.DataFrame()
     
-    print(f"Raw data type: {type(data)}, shape: {data.shape if hasattr(data, 'shape') else 'N/A'}")
-    
     # Extract closing prices
-    # yfinance returns MultiIndex columns: (Price Type, Ticker)
     prices = None
     
     if len(tickers) == 1:
         # Single ticker case
         ticker = tickers[0]
-        print(f"Processing single ticker: {ticker}")
+        print(f"\n📍 단일 티커 처리: {ticker}")
         
         if isinstance(data, pd.Series):
-            # data is already a Series (single ticker, single price type)
-            print(f"  → Data is a Series: {len(data)} rows")
+            print(f"  → Series 형태: {len(data)} 행")
             prices = data.to_frame(name=ticker)
         elif isinstance(data, pd.DataFrame):
-            # data is a DataFrame
-            print(f"  → Data is DataFrame with columns: {list(data.columns)}")
+            print(f"  → DataFrame 형태")
+            print(f"     컬럼: {list(data.columns)}")
+            
             if 'Close' in data.columns:
                 close_col = data['Close']
+                print(f"     'Close' 컬럼 사용: {len(close_col)} 행")
                 if isinstance(close_col, pd.Series):
-                    print(f"    → Using 'Close' column: {len(close_col)} rows")
                     prices = close_col.to_frame(name=ticker)
                 else:
-                    # Single scalar - need to handle this case
-                    print(f"⚠️  'Close' column is not a Series: {type(close_col)}")
+                    print(f"     ⚠️  'Close'이 Series가 아님: {type(close_col)}")
             else:
-                # Try to use the first column
                 first_col = data.iloc[:, 0]
-                print(f"    → Using first column: {first_col.name}, {len(first_col)} rows")
+                print(f"     첫 번째 컬럼 사용: {data.columns[0]}, {len(first_col)} 행")
                 if isinstance(first_col, pd.Series) and len(first_col) > 0:
                     prices = first_col.to_frame(name=ticker)
                 else:
-                    print(f"⚠️  Could not extract valid price data for {ticker}")
+                    print(f"     ⚠️  첫 컬럼 추출 실패")
     else:
         # Multiple tickers case
-        print(f"Processing multiple tickers: {len(tickers)}")
-        print(f"  → Data columns type: {type(data.columns)}")
+        print(f"\n📍 다중 티커 처리: {len(tickers)}개")
         
         if isinstance(data.columns, pd.MultiIndex):
-            # Access by price type: 'Close' is at level 0
-            print(f"  → MultiIndex detected, levels: {data.columns.names}")
+            print(f"  → MultiIndex 컬럼")
             try:
                 prices = data.xs('Close', level=0, axis=1)
-                print(f"    → Extracted 'Close' prices: {prices.shape}")
+                print(f"     'Close' 추출 성공: {prices.shape}")
             except KeyError:
-                # 'Close' not in MultiIndex, try first level
-                print(f"⚠️  'Close' not in MultiIndex, using first level")
+                print(f"     ⚠️  'Close' 레벨 없음")
                 prices = data
         elif 'Close' in data.columns:
-            # Simple columns, Close is available
-            print(f"  → Simple columns with 'Close'")
+            print(f"  → Simple 컬럼 with 'Close'")
             prices = data[['Close']]
-            prices.columns = [col[1] if isinstance(col, tuple) else col for col in prices.columns]
         else:
-            # Fallback: use all data
-            print(f"⚠️  No 'Close' column found, using all data")
+            print(f"  → 'Close' 없음, 모든 데이터 사용")
             prices = data
     
     # Check if we got any prices
     if prices is None:
-        print("⚠️  prices is None after processing")
+        print("\n❌ prices가 None입니다")
         return pd.DataFrame()
     
     # Ensure prices is a DataFrame
     if isinstance(prices, pd.Series):
+        print(f"\nSeries를 DataFrame으로 변환")
         prices = prices.to_frame()
     
-    print(f"Prices shape before filtering: {prices.shape}")
-    print(f"Prices columns: {list(prices.columns)}")
+    print(f"\n📊 필터링 전:")
+    print(f"   형태: {prices.shape}")
+    print(f"   컬럼: {list(prices.columns)}")
+    print(f"   인덱스 범위: {prices.index[0]} ~ {prices.index[-1]}")
     
     # Filter to only include tickers that were successfully downloaded
     if len(prices.columns) > 0:
         available_cols = [col for col in tickers if col in prices.columns]
-        print(f"Available tickers: {available_cols}")
+        print(f"   요청 티커: {tickers}")
+        print(f"   수신 티커: {available_cols}")
         if len(available_cols) > 0:
             prices = prices[available_cols]
         else:
-            # No requested tickers found, just keep what we have
-            print(f"⚠️  No requested tickers found, keeping all columns: {list(prices.columns)}")
+            print(f"   ⚠️  요청 티커가 없습니다. 모든 컬럼 유지: {list(prices.columns)}")
     
     # Remove rows with NaN values
-    print(f"Rows before dropna: {len(prices)}")
-    initial_rows = len(prices)
-    
-    if initial_rows == 0:
-        print("⚠️  CRITICAL: prices DataFrame is empty!")
-        return prices
-    
-    # Try strict approach first: remove any row with NaN
+    initial_len = len(prices)
     prices_strict = prices.dropna(how='any')
     
-    # If we lose too much data (more than 50%), try a looser approach
+    print(f"\n🧹 NaN 제거:")
+    print(f"   제거 전: {initial_len} 행")
+    print(f"   제거 후: {len(prices_strict)} 행")
+    
     if len(prices_strict) < len(prices) * 0.5:
-        print(f"⚠️  Strict dropna would remove {len(prices) - len(prices_strict)} rows ({(len(prices) - len(prices_strict))/len(prices)*100:.1f}%)")
-        print(f"    Using looser approach: keep rows with 80%+ data coverage...")
+        print(f"   ⚠️  50% 이상 손실! 유연한 방식 사용...")
         prices = prices.dropna(thresh=len(prices.columns) * 0.8)
+        print(f"   완화 후: {len(prices)} 행 (80%+ 커버리지)")
     else:
         prices = prices_strict
     
-    print(f"Rows after dropna: {len(prices)}")
-    
-    if initial_rows > 0 and len(prices) == 0:
-        print(f"⚠️  CRITICAL: All {initial_rows} rows were removed!")
-        print(f"    The first few rows had these values:")
-        print(prices_strict.head(3))
-    
+    # Final result
+    print(f"\n✅ 최종 결과:")
     if len(prices) > 0:
-        print(f"\n✓ Downloaded data shape: {prices.shape}")
-        print(f"✓ Date range: {prices.index[0].date()} to {prices.index[-1].date()}")
-        print(f"✓ Successfully loaded tickers: {list(prices.columns)}")
+        print(f"   데이터: {prices.shape[0]} 행 × {prices.shape[1]} 컬럼")
+        print(f"   기간: {prices.index[0].date()} ~ {prices.index[-1].date()}")
+        print(f"   티커: {list(prices.columns)}")
     else:
-        print("⚠️  No valid data after filtering NaN values")
+        print(f"   ❌ 데이터 없음!")
+    
+    print(f"{'='*60}\n")
     
     return prices
 
