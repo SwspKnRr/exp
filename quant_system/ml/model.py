@@ -5,7 +5,7 @@ Trains RandomForestClassifier to predict future positive returns.
 
 import pandas as pd
 import numpy as np
-from typing import Tuple, List
+from typing import Tuple, List, Dict
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 import warnings
