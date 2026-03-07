@@ -284,6 +284,18 @@ class PerformanceMetrics:
         end_date = equity_curve.index[-1]
         years = (end_date - start_date).days / 365.25
         
+        # Calculate basic metrics
+        total_profit = final_capital - initial_capital
+        max_drawdown = self.calculate_max_drawdown(equity_curve)[0]
+        profit_factor = self.calculate_profit_factor(returns)
+        
+        # Recovery Factor = Total Profit / Max Drawdown
+        # If max drawdown is positive or zero, recovery factor is infinite or undefined
+        if max_drawdown < 0:
+            recovery_factor = abs(total_profit / (initial_capital * max_drawdown))
+        else:
+            recovery_factor = 0  # No drawdown, so recovery factor is undefined
+        
         # Calculate metrics
         metrics = {
             'Initial Capital': initial_capital,
@@ -293,9 +305,10 @@ class PerformanceMetrics:
             'Volatility': self.calculate_volatility(returns),
             'Sharpe Ratio': self.calculate_sharpe_ratio(returns),
             'Sortino Ratio': self.calculate_sortino_ratio(returns),
-            'Max Drawdown': self.calculate_max_drawdown(equity_curve)[0],
+            'Max Drawdown': max_drawdown,
             'Win Rate': self.calculate_win_rate(returns),
-            'Profit Factor': self.calculate_profit_factor(returns),
+            'Profit Factor': profit_factor,
+            'Recovery Factor': recovery_factor,
             'Average Daily Return': returns.mean(),
             'Std Dev Daily Return': returns.std()
         }
@@ -340,6 +353,7 @@ class PerformanceMetrics:
         print(f"\nTrading Metrics:")
         print(f"  Win Rate:           {metrics['Win Rate']:>15.2%}")
         print(f"  Profit Factor:      {metrics['Profit Factor']:>15.2f}")
+        print(f"  Recovery Factor:    {metrics['Recovery Factor']:>15.2f}")
         
         # Daily metrics
         print(f"\nDaily Statistics:")
