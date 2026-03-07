@@ -602,7 +602,7 @@ def calculate_performance_metrics(equity_curve, initial_capital):
     max_dd_value = equity_curve.loc[max_dd_idx, 'portfolio_value']
     
     fig.add_vline(
-        x=max_dd_idx,
+        x=str(max_dd_idx.date()),
         line_dash="dash",
         line_color="red",
         annotation_text="Max Drawdown",
