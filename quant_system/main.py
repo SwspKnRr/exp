@@ -269,12 +269,26 @@ def run_walk_forward_backtest(prices, start_date='2015-01-01', end_date=None):
     if end_date is None:
         end_date = prices.index[-1].strftime('%Y-%m-%d')
     
-    # Define portfolio selection function
-    def select_portfolio_for_backtest(train_prices, train_features, date):
-        """Simple portfolio selection based on momentum ranking."""
+    # Define portfolio selection function for weekly rebalancing
+    def select_portfolio_for_backtest(prices_with_history, date):
+        """
+        Portfolio selection for each rebalancing date.
+        
+        Parameters
+        ----------
+        prices_with_history : pd.DataFrame
+            Price data including train + past test data
+        date : pd.Timestamp
+            Current rebalancing date
+        
+        Returns
+        -------
+        List[str]
+            Selected ticker symbols
+        """
         ranker = ETFRanker(max_positions=3)
         selected = ranker.select_portfolio(
-            train_prices, 
+            prices_with_history, 
             date=date, 
             exclude_tickers=['SPY']
         )

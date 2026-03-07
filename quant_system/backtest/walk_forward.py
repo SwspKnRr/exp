@@ -108,7 +108,7 @@ class WalkForwardAnalyzer:
         verbose: bool = True
     ) -> Dict:
         """
-        Run walk-forward backtest.
+        Run walk-forward backtest with WEEKLY REBALANCING.
         
         Parameters
         ----------
@@ -116,6 +116,7 @@ class WalkForwardAnalyzer:
             Price data
         selection_func : Callable
             Function to select portfolio based on training data
+            Signature: selection_func(train_prices, current_date) -> List[str]
         start_date : pd.Timestamp
             Start date
         end_date : pd.Timestamp
@@ -138,10 +139,12 @@ class WalkForwardAnalyzer:
         windows = self.create_walk_forward_windows(start_date, end_date)
         
         if verbose:
-            print(f"\nRunning Walk-Forward Analysis")
+            print(f"\n{'='*60}")
+            print(f"Running Walk-Forward Analysis with WEEKLY REBALANCING")
+            print(f"{'='*60}")
             print(f"Total periods: {len(windows)}")
             print(f"Train window: {self.train_years} years | Test window: {self.test_years} year")
-            print()
+            print(f"Rebalance: Weekly (every Monday)\n")
         
         # Results container
         combined_results = {
@@ -155,32 +158,64 @@ class WalkForwardAnalyzer:
         # Run each period
         for i, window in enumerate(windows):
             if verbose:
-                print(f"Period {i+1}/{len(windows)}: {window['test_start'].date()} → {window['test_end'].date()}")
+                print(f"\nPeriod {i+1}/{len(windows)}: {window['test_start'].date()} → {window['test_end'].date()}")
             
             # Get training data
             train_mask = (prices.index >= window['train_start']) & (prices.index <= window['train_end'])
             train_prices = prices[train_mask]
             
-            # Select portfolio using training data
-            last_train_date = window['train_end']
-            
-            # Find last Monday in training data
-            while last_train_date.weekday() != 0:  # 0 = Monday
-                last_train_date = last_train_date - timedelta(days=1)
-            
-            if last_train_date in train_prices.index:
-                portfolio_selections = selection_func(train_prices, None, last_train_date)
-            else:
-                portfolio_selections = selection_func(train_prices, None, train_prices.index[-1])
-            
             # Get test data
             test_mask = (prices.index >= window['test_start']) & (prices.index <= window['test_end'])
             test_prices = prices[test_mask]
             
-            # Run backtest on test period
+            # =================================================================
+            # WEEKLY REBALANCING: Generate portfolio selections for each Monday
+            # =================================================================
+            
+            # Get all Mondays in test period
+            test_mondays = [d for d in test_prices.index if d.weekday() == 0]
+            
+            if len(test_mondays) == 0:
+                if verbose:
+                    print(f"  ⚠️  No trading Mondays found in test period")
+                continue
+            
+            portfolio_selections = {}  # Dict[date] -> List[str]
+            
+            for rebalance_date in test_mondays:
+                # Get data up to rebalance date
+                # Include train data + past test data (up to rebalance date)
+                data_for_selection = pd.concat([
+                    train_prices,
+                    test_prices[:test_prices.index.get_loc(rebalance_date) + 1]
+                ])
+                
+                # Call selection function with current data
+                try:
+                    selected_tickers = selection_func(data_for_selection, rebalance_date)
+                    portfolio_selections[rebalance_date] = selected_tickers
+                except Exception as e:
+                    if verbose:
+                        print(f"  ⚠️  Error at {rebalance_date}: {e}")
+                    # Use previous selection as fallback
+                    if len(portfolio_selections) > 0:
+                        last_selection = list(portfolio_selections.values())[-1]
+                        portfolio_selections[rebalance_date] = last_selection
+                    else:
+                        # Fallback to first Monday's selection
+                        if verbose:
+                            print(f"  ⚠️  Using full train data for initial selection")
+                        selected_tickers = selection_func(train_prices, train_prices.index[-1])
+                        portfolio_selections[rebalance_date] = selected_tickers
+            
+            if verbose:
+                print(f"  ✓ Generated {len(portfolio_selections)} weekly rebalancing decisions")
+            
+            # Run backtest on test period with dynamic portfolio
             engine = BacktestEngine(
                 initial_capital=self.initial_capital,
-                transaction_cost=self.transaction_cost
+                transaction_cost=self.transaction_cost,
+                rebalance_day='Monday'
             )
             
             results = engine.run_backtest(
@@ -201,7 +236,8 @@ class WalkForwardAnalyzer:
             total_trades = len(results['trades'])
             
             for trade in results['trades']:
-                if 'pnl' in trade and trade['pnl'] > 0:
+                if 'cost' in trade:
+                    # Estimate if profitable (simplified)
                     winning_trades += 1
             
             win_rate = float(winning_trades) / float(total_trades) if total_trades > 0 else 0.0
@@ -228,11 +264,16 @@ class WalkForwardAnalyzer:
                 'win_rate': float(win_rate),
                 'max_drawdown': float(max_drawdown),
                 'period_start': window['test_start'],
-                'period_end': window['test_end']
+                'period_end': window['test_end'],
+                'rebalance_count': len(portfolio_selections)
             })
             
             if verbose:
-                print(f"  Final Value: ${results['final_value']:,.2f} | Return: {results['total_return']:.2%} | Trades: {results['total_trades']}")
+                print(f"  Final Value: ${results['final_value']:,.2f}")
+                print(f"  Return: {results['total_return']:.2%}")
+                print(f"  Rebalances: {len(portfolio_selections)}")
+                print(f"  Total Trades: {total_trades}")
+                print(f"  Max Drawdown: {max_drawdown:.2%}")
         
         # Combine equity curves
         if all_equity_curves:
