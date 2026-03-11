@@ -612,15 +612,24 @@ def calculate_performance_metrics(equity_curve, initial_capital):
     max_dd_idx = drawdown.idxmin()
     max_dd_value = equity_curve.loc[max_dd_idx, 'portfolio_value']
     
-    # Convert datetime to string for add_vline
-    max_dd_date_str = pd.Timestamp(max_dd_idx).strftime('%Y-%m-%d')
+    # Use add_shape instead of add_vline to avoid annotation issues
+    fig.add_shape(
+        type="line",
+        x0=max_dd_idx, x1=max_dd_idx,
+        y0=0, y1=1,
+        yref="paper",
+        line=dict(color="red", width=2, dash="dash")
+    )
     
-    fig.add_vline(
-        x=max_dd_date_str,
-        line_dash="dash",
-        line_color="red",
-        annotation_text="Max Drawdown",
-        annotation_position="top right"
+    # Add annotation separately
+    fig.add_annotation(
+        x=max_dd_idx,
+        y=1,
+        yref="paper",
+        text="Max Drawdown",
+        showarrow=False,
+        xanchor="left",
+        yanchor="bottom"
     )
     
     fig.update_layout(
