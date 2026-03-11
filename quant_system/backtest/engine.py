@@ -132,8 +132,9 @@ class BacktestEngine:
                     shares_to_sell = current_shares - (target_value / current_prices[ticker])
                     
                     if shares_to_sell > 0:
-                        sale_price = current_prices[ticker] * (1 - self.transaction_cost)
-                        sale_value = shares_to_sell * sale_price
+                        # Execution price with bid-ask spread cost
+                        execution_price = current_prices[ticker] * (1 - self.transaction_cost)
+                        sale_value = shares_to_sell * execution_price
                         
                         new_cash += sale_value
                         new_positions[ticker] -= shares_to_sell
@@ -144,7 +145,8 @@ class BacktestEngine:
                             'side': 'SELL',
                             'shares': shares_to_sell,
                             'price': current_prices[ticker],
-                            'cost': shares_to_sell * current_prices[ticker] * self.transaction_cost
+                            'execution_price': execution_price,
+                            'transaction_cost': shares_to_sell * current_prices[ticker] * self.transaction_cost
                         })
         
         # Second: Buy positions we want to add
@@ -159,8 +161,9 @@ class BacktestEngine:
             shares_needed = (target_value - current_value) / current_prices[ticker]
             
             if shares_needed > 0:
-                buy_price = current_prices[ticker] * (1 + self.transaction_cost)
-                buy_cost = shares_needed * buy_price
+                # Execution price with bid-ask spread cost
+                execution_price = current_prices[ticker] * (1 + self.transaction_cost)
+                buy_cost = shares_needed * execution_price
                 
                 if buy_cost <= new_cash:
                     new_cash -= buy_cost
@@ -172,7 +175,8 @@ class BacktestEngine:
                         'side': 'BUY',
                         'shares': shares_needed,
                         'price': current_prices[ticker],
-                        'cost': shares_needed * current_prices[ticker] * self.transaction_cost
+                        'execution_price': execution_price,
+                        'transaction_cost': shares_needed * current_prices[ticker] * self.transaction_cost
                     })
         
         # Remove zero positions

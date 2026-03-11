@@ -114,6 +114,7 @@ def calculate_rsi(prices: pd.DataFrame, period: int = 14) -> pd.DataFrame:
 def create_momentum_features(prices: pd.DataFrame) -> pd.DataFrame:
     """
     Create comprehensive momentum features.
+    Aligned with ranking system: log-return based momentum score = 0.4*R20 + 0.3*R60 + 0.3*R120
     
     Parameters
     ----------
@@ -128,34 +129,27 @@ def create_momentum_features(prices: pd.DataFrame) -> pd.DataFrame:
     
     features = pd.DataFrame(index=prices.index)
     
-    # Returns
-    returns_df = calculate_returns(prices, periods=[5, 10, 20, 50, 100, 200])
+    # Returns (simple % change for general features)
+    returns_df = calculate_returns(prices, periods=[20, 50, 100, 200])
     features = pd.concat([features, returns_df], axis=1)
     
     # Moving average ratios
-    ma_ratios = calculate_moving_average_ratios(prices, fast_period=20, slow_period=50)
+    ma_ratios = calculate_moving_average_ratios(prices, fast_period=20, slow_period=200)
     features = pd.concat([features, ma_ratios], axis=1)
     
     # RSI
     rsi_df = calculate_rsi(prices, period=14)
     features = pd.concat([features, rsi_df], axis=1)
     
-    # Momentum score (composite)
+    # Momentum score (composite) - UNIFIED with ranking system
+    # Formula: 0.4 * log_return_20d + 0.3 * log_return_60d + 0.3 * log_return_120d
     for ticker in prices.columns:
-        momentum_score = 0
+        # Use log returns for consistency with ranking.py
+        r20 = np.log(prices[ticker] / prices[ticker].shift(20))
+        r60 = np.log(prices[ticker] / prices[ticker].shift(60))
+        r120 = np.log(prices[ticker] / prices[ticker].shift(120))
         
-        # Trend component
-        if f'{ticker}_ma_crossover' in features.columns:
-            momentum_score += features[f'{ticker}_ma_crossover'] * 0.3
-        
-        # Return component
-        if f'{ticker}_return_20d' in features.columns:
-            momentum_score += features[f'{ticker}_return_20d'].rank() / len(features) * 0.4
-        
-        # RSI component
-        if f'{ticker}_rsi' in features.columns:
-            momentum_score += (features[f'{ticker}_rsi'] / 100) * 0.3
-        
+        momentum_score = 0.4 * r20 + 0.3 * r60 + 0.3 * r120
         features[f'{ticker}_momentum_score'] = momentum_score
     
     return features.fillna(0)

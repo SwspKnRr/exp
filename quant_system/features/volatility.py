@@ -35,12 +35,14 @@ def calculate_volatility(prices: pd.DataFrame, period: int = 20) -> pd.DataFrame
 
 def calculate_atr(prices: pd.DataFrame, period: int = 14) -> pd.DataFrame:
     """
-    Calculate Average True Range.
+    Calculate Average True Range (ATR).
+    NOTE: Using close prices only (OHLC data unavailable).
+    True Range approximation = max(close-prev_close, rolling volatility-based range)
     
     Parameters
     ----------
     prices : pd.DataFrame
-        OHLC data or just close prices
+        Adjusted close prices only
     period : int
         ATR period (default 14)
     
@@ -53,9 +55,16 @@ def calculate_atr(prices: pd.DataFrame, period: int = 14) -> pd.DataFrame:
     atr = pd.DataFrame(index=prices.index)
     
     for ticker in prices.columns:
-        # Using close prices only (approximation)
-        # True range = max(high-low, abs(high-prev_close), abs(low-prev_close))
-        tr = prices[ticker].diff().abs()
+        # Close-to-close price changes (approximation of True Range)
+        # TR ≈ |close - prev_close|
+        close_change = prices[ticker].diff().abs()
+        
+        # Also use rolling volatility range as secondary TR estimate
+        log_returns = np.log(prices[ticker] / prices[ticker].shift(1))
+        volatility_range = log_returns.rolling(2).std() * prices[ticker]
+        
+        # True Range approximation: use max of close change and rolling volatility range
+        tr = pd.concat([close_change, volatility_range], axis=1).max(axis=1)
         atr[f'{ticker}_atr'] = tr.rolling(period).mean()
     
     return atr

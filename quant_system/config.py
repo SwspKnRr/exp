@@ -58,8 +58,9 @@ EXCLUDE_FROM_SELECTION = ['SPY']  # Don't select benchmark in portfolio
 # ============================================================================
 
 # Momentum Features
-MOMENTUM_PERIODS = [5, 10, 20, 60, 120]  # Days
-MA_PERIODS = [20, 60]  # Moving average periods
+# NOTE: Ranking system uses 20d, 60d, 120d (see RANKING_WEIGHTS)
+MOMENTUM_PERIODS = [20, 50, 100, 200]  # Days for feature engineering
+MA_PERIODS = [20, 50, 200]  # Moving average periods (includes 200d regime filter)
 RSI_PERIOD = 14
 
 # Volatility Features

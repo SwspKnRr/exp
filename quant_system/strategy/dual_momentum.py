@@ -90,6 +90,7 @@ class DualMomentum:
     ) -> pd.DataFrame:
         """
         Generate dual momentum signals.
+        Uses LOG RETURNS for consistency with ranking system.
         
         Parameters
         ----------
@@ -102,12 +103,19 @@ class DualMomentum:
         -------
         pd.DataFrame
             Momentum signals (binary: 1 if momentum, 0 if not)
+        
+        Notes
+        -----
+        Signals are based on:
+        - Absolute momentum: log_return_period > 0
+        - Relative momentum: log_return_period > benchmark_log_return_period
+        Both conditions must be TRUE (AND logic)
         """
         
         if self.benchmark not in prices.columns:
             raise ValueError(f"{self.benchmark} not found in price data")
         
-        # Calculate returns
+        # Calculate LOG returns (consistent with ranking.py)
         returns = np.log(prices / prices.shift(self.momentum_period))
         benchmark_returns = returns[self.benchmark]
         

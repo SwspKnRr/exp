@@ -84,8 +84,8 @@ class PerformanceMetrics:
         if risk_free_rate is None:
             risk_free_rate = self.risk_free_rate
         
-        # Daily risk-free rate
-        daily_rf = risk_free_rate / self.days_per_year
+        # Daily risk-free rate (using exact compound formula)
+        daily_rf = (1 + risk_free_rate) ** (1 / self.days_per_year) - 1
         
         # Excess returns
         excess_returns = returns - daily_rf
@@ -104,7 +104,7 @@ class PerformanceMetrics:
         target_return: float = 0
     ) -> float:
         """
-        Calculate Sortino Ratio (penalizes downside volatility).
+        Calculate Sortino Ratio (penalizes downside volatility only).
         
         Parameters
         ----------
@@ -113,23 +113,29 @@ class PerformanceMetrics:
         risk_free_rate : float, optional
             Annual risk-free rate
         target_return : float
-            Target return threshold
+            Target return threshold (default 0)
         
         Returns
         -------
         float
             Sortino Ratio
+        
+        Notes
+        -----
+        Sortino = (mean_excess_return) / downside_deviation
+        where downside_deviation = sqrt(mean((max(target - return, 0))^2))
         """
         
         if risk_free_rate is None:
             risk_free_rate = self.risk_free_rate
         
-        daily_rf = risk_free_rate / self.days_per_year
+        # Daily risk-free rate
+        daily_rf = (1 + risk_free_rate) ** (1 / self.days_per_year) - 1
         excess_returns = returns - daily_rf
         
-        # Downside deviation (only negative returns)
-        downside = excess_returns[excess_returns < target_return]
-        downside_deviation = np.sqrt((downside ** 2).mean())
+        # Downside deviation: only penalize returns below target
+        downside_returns = np.minimum(excess_returns - target_return, 0)
+        downside_deviation = np.sqrt((downside_returns ** 2).mean())
         
         if downside_deviation == 0:
             return 0
