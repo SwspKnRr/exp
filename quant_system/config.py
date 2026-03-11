@@ -89,11 +89,13 @@ REGIME_USE_SIMPLE_MA = True  # True=SMA, False=EMA
 # Momentum Calculation
 MOMENTUM_PERIOD = 20  # Days
 
-# Conditions (both must be true):
+# Conditions (either must be true for more trading signals):
 # 1. Absolute: ETF_return_20d > 0
 # 2. Relative: ETF_return_20d > SPY_return_20d
+# REQUIRE_BOTH_CONDITIONS = True: requires BOTH (more restrictive)
+# REQUIRE_BOTH_CONDITIONS = False: requires EITHER (more tradeable signals)
 
-REQUIRE_BOTH_CONDITIONS = True
+REQUIRE_BOTH_CONDITIONS = False
 
 # ============================================================================
 # ETF RANKING SYSTEM
@@ -129,7 +131,7 @@ ML_RANDOM_STATE = 42
 ML_PREDICTION_HORIZON = 5  # Days ahead
 
 # Signal Acceptance
-ML_PROBABILITY_THRESHOLD = 0.60  # Accept signal if P(positive return) > 60%
+ML_PROBABILITY_THRESHOLD = 0.50  # Accept signal if P(positive return) > 50% (relaxed from 60%)
 
 # Training Data Split
 ML_VALIDATION_SPLIT = 0.20  # 20% for validation
