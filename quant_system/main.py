@@ -43,6 +43,17 @@ from ml.filter import MLSignalFilter
 from backtest.engine import BacktestEngine
 from backtest.walk_forward import WalkForwardAnalyzer
 from backtest.metrics import PerformanceMetrics
+from backtest_analysis import (
+    calculate_daily_returns,
+    calculate_weekly_returns,
+    get_cumulative_returns,
+    get_returns_statistics,
+    plot_cumulative_returns,
+    plot_daily_returns,
+    plot_weekly_returns,
+    plot_returns_heatmap,
+    plot_returns_distribution
+)
 
 # Streamlit page config
 st.set_page_config(
